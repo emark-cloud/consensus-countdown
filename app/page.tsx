@@ -8,7 +8,7 @@ import { genlayer } from "../lib/genlayer";
 /* -------------------------------------------------------------------------- */
 
 const GENLAYER_CHAIN = {
-  chainId: "0xF1BF", // 61999
+  chainId: "0xF22F", // 61999
   chainName: "GenLayer StudioNet",
   nativeCurrency: {
     name: "Ether",
