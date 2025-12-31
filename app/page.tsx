@@ -8,20 +8,20 @@ const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT as string;
 export default function Home() {
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [output, setOutput] = useState<any>(null);
   const [status, setStatus] = useState("");
-  const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
+  const [output, setOutput] = useState<any>(null);
 
-  // Voting + stats
   const [votesYes, setVotesYes] = useState(0);
   const [votesNo, setVotesNo] = useState(0);
 
-  // Countdown timer
   const [duration, setDuration] = useState(60);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [votingOpen, setVotingOpen] = useState(true);
 
-  // Countdown effect
+  const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
+
+  /* ---------------- Countdown ---------------- */
+
   useEffect(() => {
     if (timeLeft === null) return;
     if (timeLeft <= 0) {
@@ -32,7 +32,8 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [timeLeft]);
 
-  // Live vote stats polling (read-only)
+  /* ---------------- Live vote stats ---------------- */
+
   useEffect(() => {
     if (!roomId) return;
 
@@ -44,66 +45,57 @@ export default function Home() {
           args: [roomId],
         });
 
-        let yes = 0;
-        let no = 0;
+        let y = 0;
+        let n = 0;
         Object.values(res || {}).forEach((v: any) => {
-          if (v === "yes") yes++;
-          if (v === "no") no++;
+          if (v === "yes") y++;
+          if (v === "no") n++;
         });
 
-        setVotesYes(yes);
-        setVotesNo(no);
-      } catch {
-        // ignore polling errors
-      }
+        setVotesYes(y);
+        setVotesNo(n);
+      } catch {}
     }, 3000);
 
     return () => clearInterval(poll);
   }, [roomId]);
 
+  /* ---------------- Contract actions ---------------- */
+
   async function createRoom() {
-    setStatus("Creating room...");
+    setStatus("Creating room…");
     await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "create_room",
       args: [roomId, prompt],
     });
-    setStatus("Room created");
     setTimeLeft(duration);
     setVotingOpen(true);
     setVotesYes(0);
     setVotesNo(0);
+    setStatus("Room created. Voting is open.");
   }
 
   async function submitVote(vote: "yes" | "no") {
     if (!votingOpen) return;
-    setStatus(`Submitting ${vote.toUpperCase()} vote...`);
+    setStatus(`Submitting ${vote.toUpperCase()} vote…`);
     await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "submit_vote",
       args: [roomId, vote],
     });
-    setStatus(`Vote ${vote.toUpperCase()} submitted`);
-  }
-
-  async function getRoom() {
-    const res = await genlayer.readContract({
-      contractAddress: CONTRACT,
-      method: "get_room",
-      args: [roomId],
-    });
-    setOutput(res);
+    setStatus(`Vote submitted: ${vote.toUpperCase()}`);
   }
 
   async function resolveRoom() {
-    setStatus("Resolving via Optimistic Democracy...");
+    setStatus("Resolving via Optimistic Democracy…");
     const res = await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "resolve_room",
       args: [roomId],
     });
     setOutput(res);
-    setStatus("Resolution complete");
+    setStatus("Consensus finalized.");
   }
 
   async function loadLeaderboard() {
@@ -114,98 +106,160 @@ export default function Home() {
     });
 
     const sorted = Object.entries(res)
-      .map(([addr, xp]) => [addr, Number(xp)] as [string, number])
+      .map(([a, x]) => [a, Number(x)] as [string, number])
       .sort((a, b) => b[1] - a[1]);
 
     setLeaderboard(sorted);
   }
 
+  /* ---------------- UI ---------------- */
+
   return (
-    <main style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
-      <h1>Consensus Countdown</h1>
+    <main style={{ fontFamily: "system-ui", background: "#fafafa", minHeight: "100vh", padding: 24 }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
 
-      <input
-        placeholder="Room ID"
-        value={roomId}
-        onChange={(e) => setRoomId(e.target.value)}
-        style={{ width: "100%", marginBottom: 8 }}
-      />
-
-      <textarea
-        placeholder="Prompt (only for room creation)"
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        style={{ width: "100%", marginBottom: 8 }}
-      />
-
-      <label>
-        Countdown (seconds):
-        <input
-          type="number"
-          min={10}
-          value={duration}
-          onChange={(e) => setDuration(Number(e.target.value))}
-          style={{ marginLeft: 8, width: 80 }}
-        />
-      </label>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button onClick={createRoom}>Create Room</button>
-        <button onClick={getRoom}>Get Room</button>
-      </div>
-
-      <hr />
-
-      <h3>Vote</h3>
-
-      {timeLeft !== null && (
-        <p>
-          ⏱️ Time left: <strong>{timeLeft}s</strong>
+        <h1 style={{ fontSize: 28, marginBottom: 4 }}>Consensus Countdown</h1>
+        <p style={{ color: "#666", marginBottom: 24 }}>
+          A GenLayer mini-game powered by Optimistic Democracy
         </p>
-      )}
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
-        <button onClick={() => submitVote("yes")} disabled={!votingOpen}>
-          YES
-        </button>
-        <button onClick={() => submitVote("no")} disabled={!votingOpen}>
-          NO
-        </button>
+        {/* Room setup */}
+        <section style={{ marginBottom: 24 }}>
+          <h3>Room Setup</h3>
+
+          <input
+            placeholder="Room ID"
+            value={roomId}
+            onChange={(e) => setRoomId(e.target.value)}
+            style={{ width: "100%", padding: 10, marginBottom: 8 }}
+          />
+
+          <textarea
+            placeholder="Question / Prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            style={{ width: "100%", padding: 10, marginBottom: 8 }}
+          />
+
+          <label style={{ fontSize: 14 }}>
+            Countdown (seconds):
+            <input
+              type="number"
+              min={10}
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              style={{ marginLeft: 8, width: 80 }}
+            />
+          </label>
+
+          <div style={{ marginTop: 12 }}>
+            <button onClick={createRoom} style={btnPrimary}>Create Room</button>
+          </div>
+        </section>
+
+        {/* Voting */}
+        <section style={{ marginBottom: 24 }}>
+          <h3>Voting</h3>
+
+          {timeLeft !== null && (
+            <div style={{ fontSize: 20, marginBottom: 8 }}>
+              ⏱️ <strong>{timeLeft}s</strong>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <button disabled={!votingOpen} onClick={() => submitVote("yes")} style={btnYes}>YES</button>
+            <button disabled={!votingOpen} onClick={() => submitVote("no")} style={btnNo}>NO</button>
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 14 }}>
+            Votes → YES: <strong>{votesYes}</strong> | NO: <strong>{votesNo}</strong>
+          </div>
+
+          {!votingOpen && (
+            <div style={{ marginTop: 8, color: "#b45309" }}>
+              Voting closed — ready to resolve
+            </div>
+          )}
+        </section>
+
+        {/* Resolution */}
+        <section style={{ marginBottom: 24 }}>
+          <button onClick={resolveRoom} style={btnResolve}>Resolve Outcome</button>
+
+          {output && (
+            <pre style={{ marginTop: 12, background: "#f3f4f6", padding: 12, borderRadius: 8 }}>
+              {JSON.stringify(output, null, 2)}
+            </pre>
+          )}
+        </section>
+
+        {/* Status */}
+        {status && (
+          <div style={{ background: "#eef2ff", padding: 10, borderRadius: 8, marginBottom: 24 }}>
+            {status}
+          </div>
+        )}
+
+        {/* Leaderboard */}
+        <section>
+          <h3>🏆 Leaderboard</h3>
+          <button onClick={loadLeaderboard} style={btnSecondary}>Load Leaderboard</button>
+
+          {leaderboard.length > 0 && (
+            <ol style={{ marginTop: 12 }}>
+              {leaderboard.map(([addr, xp], i) => (
+                <li key={addr}>
+                  #{i + 1} — {addr.slice(0, 6)}…{addr.slice(-4)} — <strong>{xp}</strong> XP
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+
       </div>
-
-      <p>
-        📊 Votes — YES: <strong>{votesYes}</strong> | NO:{" "}
-        <strong>{votesNo}</strong>
-      </p>
-
-      {!votingOpen && <p>Voting closed. Ready to resolve.</p>}
-
-      <button onClick={resolveRoom}>Resolve Room</button>
-
-      {status && (
-        <p style={{ marginTop: 12, fontStyle: "italic" }}>{status}</p>
-      )}
-
-      {output && (
-        <pre style={{ marginTop: 16, background: "#f5f5f5", padding: 12 }}>
-          {JSON.stringify(output, null, 2)}
-        </pre>
-      )}
-
-      <hr style={{ margin: "24px 0" }} />
-
-      <h2>🏆 Leaderboard</h2>
-      <button onClick={loadLeaderboard}>Load Leaderboard</button>
-
-      {leaderboard.length > 0 && (
-        <ol style={{ marginTop: 12 }}>
-          {leaderboard.map(([addr, xp], idx) => (
-            <li key={addr}>
-              #{idx + 1} — {addr.slice(0, 6)}…{addr.slice(-4)} : {xp} XP
-            </li>
-          ))}
-        </ol>
-      )}
     </main>
   );
 }
+
+/* ---------------- Styles ---------------- */
+
+const btnBase = {
+  padding: "10px 16px",
+  borderRadius: 8,
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const btnPrimary = {
+  ...btnBase,
+  background: "#111827",
+  color: "#fff",
+};
+
+const btnSecondary = {
+  ...btnBase,
+  background: "#e5e7eb",
+};
+
+const btnYes = {
+  ...btnBase,
+  background: "#16a34a",
+  color: "#fff",
+  flex: 1,
+};
+
+const btnNo = {
+  ...btnBase,
+  background: "#dc2626",
+  color: "#fff",
+  flex: 1,
+};
+
+const btnResolve = {
+  ...btnBase,
+  background: "#4f46e5",
+  color: "#fff",
+  width: "100%",
+};
