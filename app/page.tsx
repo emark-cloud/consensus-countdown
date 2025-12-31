@@ -9,7 +9,8 @@ export default function Home() {
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState<any>(null);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState("");
+  const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
 
   async function createRoom() {
     setStatus("Creating room...");
@@ -51,8 +52,23 @@ export default function Home() {
     setStatus("Resolution complete");
   }
 
+  async function loadLeaderboard() {
+    const res = await genlayer.readContract({
+      contractAddress: CONTRACT,
+      method: "get_leaderboard",
+      args: [],
+    });
+
+    // Convert object -> sorted array
+    const sorted = Object.entries(res)
+      .map(([addr, xp]) => [addr, Number(xp)] as [string, number])
+      .sort((a, b) => b[1] - a[1]);
+
+    setLeaderboard(sorted);
+  }
+
   return (
-    <main style={{ padding: 24, maxWidth: 600, margin: "0 auto" }}>
+    <main style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
       <h1>Consensus Countdown</h1>
 
       <input
@@ -92,6 +108,21 @@ export default function Home() {
         <pre style={{ marginTop: 16, background: "#f5f5f5", padding: 12 }}>
           {JSON.stringify(output, null, 2)}
         </pre>
+      )}
+
+      <hr style={{ margin: "24px 0" }} />
+
+      <h2>🏆 Leaderboard</h2>
+      <button onClick={loadLeaderboard}>Load Leaderboard</button>
+
+      {leaderboard.length > 0 && (
+        <ol style={{ marginTop: 12 }}>
+          {leaderboard.map(([addr, xp], idx) => (
+            <li key={addr}>
+              #{idx + 1} — {addr.slice(0, 6)}…{addr.slice(-4)} : {xp} XP
+            </li>
+          ))}
+        </ol>
       )}
     </main>
   );
