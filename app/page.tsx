@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { genlayer } from "../lib/genlayer";
 
 const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT as string;
@@ -12,6 +12,26 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
 
+  // Countdown timer state
+  const [duration, setDuration] = useState(60); // seconds
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [votingOpen, setVotingOpen] = useState(true);
+
+  // Timer effect
+  useEffect(() => {
+    if (timeLeft === null) return;
+    if (timeLeft <= 0) {
+      setVotingOpen(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setTimeLeft(timeLeft - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [timeLeft]);
+
   async function createRoom() {
     setStatus("Creating room...");
     await genlayer.callContract({
@@ -20,9 +40,15 @@ export default function Home() {
       args: [roomId, prompt],
     });
     setStatus("Room created");
+
+    // Start countdown
+    setTimeLeft(duration);
+    setVotingOpen(true);
   }
 
   async function submitVote(vote: "yes" | "no") {
+    if (!votingOpen) return;
+
     setStatus(`Submitting ${vote.toUpperCase()} vote...`);
     await genlayer.callContract({
       contractAddress: CONTRACT,
@@ -59,7 +85,6 @@ export default function Home() {
       args: [],
     });
 
-    // Convert object -> sorted array
     const sorted = Object.entries(res)
       .map(([addr, xp]) => [addr, Number(xp)] as [string, number])
       .sort((a, b) => b[1] - a[1]);
@@ -68,7 +93,7 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 700, margin: "0 auto" }}>
+    <main style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
       <h1>Consensus Countdown</h1>
 
       <input
@@ -85,7 +110,18 @@ export default function Home() {
         style={{ width: "100%", marginBottom: 8 }}
       />
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <label>
+        Countdown (seconds):
+        <input
+          type="number"
+          min={10}
+          value={duration}
+          onChange={(e) => setDuration(Number(e.target.value))}
+          style={{ marginLeft: 8, width: 80 }}
+        />
+      </label>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={createRoom}>Create Room</button>
         <button onClick={getRoom}>Get Room</button>
       </div>
@@ -93,10 +129,23 @@ export default function Home() {
       <hr />
 
       <h3>Vote</h3>
+
+      {timeLeft !== null && (
+        <p>
+          ⏱️ Time left: <strong>{timeLeft}s</strong>
+        </p>
+      )}
+
       <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-        <button onClick={() => submitVote("yes")}>YES</button>
-        <button onClick={() => submitVote("no")}>NO</button>
+        <button onClick={() => submitVote("yes")} disabled={!votingOpen}>
+          YES
+        </button>
+        <button onClick={() => submitVote("no")} disabled={!votingOpen}>
+          NO
+        </button>
       </div>
+
+      {!votingOpen && <p>Voting closed. Ready to resolve.</p>}
 
       <button onClick={resolveRoom}>Resolve Room</button>
 
