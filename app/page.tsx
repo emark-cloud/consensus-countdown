@@ -12,25 +12,54 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
 
-  // Countdown timer state
-  const [duration, setDuration] = useState(60); // seconds
+  // Voting + stats
+  const [votesYes, setVotesYes] = useState(0);
+  const [votesNo, setVotesNo] = useState(0);
+
+  // Countdown timer
+  const [duration, setDuration] = useState(60);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [votingOpen, setVotingOpen] = useState(true);
 
-  // Timer effect
+  // Countdown effect
   useEffect(() => {
     if (timeLeft === null) return;
     if (timeLeft <= 0) {
       setVotingOpen(false);
       return;
     }
-
-    const timer = setTimeout(() => {
-      setTimeLeft(timeLeft - 1);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+    return () => clearTimeout(t);
   }, [timeLeft]);
+
+  // Live vote stats polling (read-only)
+  useEffect(() => {
+    if (!roomId) return;
+
+    const poll = setInterval(async () => {
+      try {
+        const res = await genlayer.readContract({
+          contractAddress: CONTRACT,
+          method: "get_votes",
+          args: [roomId],
+        });
+
+        let yes = 0;
+        let no = 0;
+        Object.values(res || {}).forEach((v: any) => {
+          if (v === "yes") yes++;
+          if (v === "no") no++;
+        });
+
+        setVotesYes(yes);
+        setVotesNo(no);
+      } catch {
+        // ignore polling errors
+      }
+    }, 3000);
+
+    return () => clearInterval(poll);
+  }, [roomId]);
 
   async function createRoom() {
     setStatus("Creating room...");
@@ -40,15 +69,14 @@ export default function Home() {
       args: [roomId, prompt],
     });
     setStatus("Room created");
-
-    // Start countdown
     setTimeLeft(duration);
     setVotingOpen(true);
+    setVotesYes(0);
+    setVotesNo(0);
   }
 
   async function submitVote(vote: "yes" | "no") {
     if (!votingOpen) return;
-
     setStatus(`Submitting ${vote.toUpperCase()} vote...`);
     await genlayer.callContract({
       contractAddress: CONTRACT,
@@ -136,7 +164,7 @@ export default function Home() {
         </p>
       )}
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
         <button onClick={() => submitVote("yes")} disabled={!votingOpen}>
           YES
         </button>
@@ -144,6 +172,11 @@ export default function Home() {
           NO
         </button>
       </div>
+
+      <p>
+        📊 Votes — YES: <strong>{votesYes}</strong> | NO:{" "}
+        <strong>{votesNo}</strong>
+      </p>
 
       {!votingOpen && <p>Voting closed. Ready to resolve.</p>}
 
