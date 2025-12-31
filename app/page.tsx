@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { genlayer } from "../lib/genlayer";
 
 /* -------------------------------------------------------------------------- */
-/*                              GenLayer StudioNet                             */
+/*                         GenLayer StudioNet Config                           */
 /* -------------------------------------------------------------------------- */
 
 const GENLAYER_CHAIN = {
@@ -67,6 +67,7 @@ function getWeekId() {
 /* -------------------------------------------------------------------------- */
 
 export default function Home() {
+  const [hasEthereum, setHasEthereum] = useState(false);
   const [wallet, setWallet] = useState<string | null>(null);
 
   const [roomId, setRoomId] = useState("");
@@ -85,37 +86,70 @@ export default function Home() {
 
   const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
 
+  /* ---------------- Detect MetaMask safely ---------------- */
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const checkEthereum = () => {
+      if ((window as any).ethereum) {
+        setHasEthereum(true);
+      }
+    };
+
+    checkEthereum();
+
+    window.addEventListener("ethereum#initialized", checkEthereum, {
+      once: true,
+    });
+
+    setTimeout(checkEthereum, 3000);
+
+    return () => {
+      window.removeEventListener("ethereum#initialized", checkEthereum);
+    };
+  }, []);
+
   /* ---------------- Wallet + Chain ---------------- */
 
   async function connectWallet() {
-    const eth = (window as any).ethereum;
-    if (!eth) {
-      alert("Please install MetaMask");
+    if (!hasEthereum) {
+      alert("MetaMask not detected. Please install MetaMask and refresh.");
       return;
     }
 
-    const accounts = await eth.request({ method: "eth_requestAccounts" });
-    const chainId = await eth.request({ method: "eth_chainId" });
+    const eth = (window as any).ethereum;
 
-    if (chainId !== GENLAYER_CHAIN.chainId) {
-      try {
-        await eth.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: GENLAYER_CHAIN.chainId }],
-        });
-      } catch (err: any) {
-        if (err.code === 4902) {
+    try {
+      const accounts = await eth.request({
+        method: "eth_requestAccounts",
+      });
+
+      const chainId = await eth.request({ method: "eth_chainId" });
+
+      if (chainId !== GENLAYER_CHAIN.chainId) {
+        try {
           await eth.request({
-            method: "wallet_addEthereumChain",
-            params: [GENLAYER_CHAIN],
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: GENLAYER_CHAIN.chainId }],
           });
-        } else {
-          throw err;
+        } catch (err: any) {
+          if (err.code === 4902) {
+            await eth.request({
+              method: "wallet_addEthereumChain",
+              params: [GENLAYER_CHAIN],
+            });
+          } else {
+            throw err;
+          }
         }
       }
-    }
 
-    setWallet(accounts[0]);
+      setWallet(accounts[0]);
+    } catch (err) {
+      console.error(err);
+      alert("Wallet connection rejected");
+    }
   }
 
   /* ---------------- Countdown ---------------- */
@@ -246,8 +280,12 @@ export default function Home() {
         <p>A GenLayer mini-game powered by Optimistic Democracy</p>
 
         {!wallet ? (
-          <button onClick={connectWallet} style={btnPrimary}>
-            Connect Wallet (StudioNet)
+          <button
+            onClick={connectWallet}
+            style={btnPrimary}
+            disabled={!hasEthereum}
+          >
+            {hasEthereum ? "Connect Wallet (StudioNet)" : "Waiting for MetaMask…"}
           </button>
         ) : (
           <p style={{ fontSize: 12 }}>
