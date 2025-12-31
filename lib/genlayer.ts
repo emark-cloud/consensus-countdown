@@ -1,3 +1,9 @@
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 const RPC_URL = "https://rpc.genlayer.com";
 
 async function rpc(method: string, params: any[]) {
@@ -19,6 +25,16 @@ async function rpc(method: string, params: any[]) {
   return json.result;
 }
 
+async function getSenderAddress(): Promise<string> {
+  if (!window.ethereum) {
+    throw new Error("No wallet found. Please install MetaMask.");
+  }
+  const accounts = await window.ethereum.request({
+    method: "eth_requestAccounts",
+  });
+  return accounts[0];
+}
+
 export const genlayer = {
   async callContract({
     contractAddress,
@@ -29,8 +45,11 @@ export const genlayer = {
     method: string;
     args: any[];
   }) {
+    const from = await getSenderAddress();
+
     return rpc("genlayer_callContract", [
       {
+        from,
         contractAddress,
         method,
         args,
