@@ -3,11 +3,63 @@
 import { useState, useEffect } from "react";
 import { genlayer } from "../lib/genlayer";
 
+/* -------------------------------------------------------------------------- */
+/*                                   Config                                   */
+/* -------------------------------------------------------------------------- */
+
 const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT as string;
+
+/* -------------------------------------------------------------------------- */
+/*                              Prompt Presets                                */
+/* -------------------------------------------------------------------------- */
+
+const PROMPT_PRESETS: Record<string, string[]> = {
+  Sports: [
+    "Did the referee decision change the outcome of the match?",
+    "Was this performance overrated?",
+    "Did the better team actually win?",
+  ],
+  Governance: [
+    "Is this DAO proposal too risky?",
+    "Should emergency powers be used here?",
+    "Is this decision aligned with long-term incentives?",
+  ],
+  Tech: [
+    "Is this AI output misleading?",
+    "Does this model hallucinate in this example?",
+    "Is automation appropriate in this case?",
+  ],
+  Culture: [
+    "Is this meme offensive?",
+    "Is this headline clickbait?",
+    "Does this joke cross a line?",
+  ],
+};
+
+/* -------------------------------------------------------------------------- */
+/*                              Weekly Reset                                  */
+/* -------------------------------------------------------------------------- */
+
+function getWeekId() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const week = Math.floor(
+    (Date.UTC(year, now.getUTCMonth(), now.getUTCDate()) -
+      Date.UTC(year, 0, 1)) /
+      (7 * 24 * 60 * 60 * 1000)
+  );
+  return `${year}-W${week}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                   Page                                     */
+/* -------------------------------------------------------------------------- */
 
 export default function Home() {
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [category, setCategory] = useState("Sports");
+
   const [status, setStatus] = useState("");
   const [output, setOutput] = useState<any>(null);
 
@@ -32,7 +84,7 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [timeLeft]);
 
-  /* ---------------- Live vote stats ---------------- */
+  /* ---------------- Live Vote Stats ---------------- */
 
   useEffect(() => {
     if (!roomId) return;
@@ -60,7 +112,15 @@ export default function Home() {
     return () => clearInterval(poll);
   }, [roomId]);
 
-  /* ---------------- Contract actions ---------------- */
+  /* ---------------- Helpers ---------------- */
+
+  function loadRandomPrompt(cat: string) {
+    const list = PROMPT_PRESETS[cat];
+    const idx = Math.floor(Math.random() * list.length);
+    setPrompt(list[idx]);
+  }
+
+  /* ---------------- Contract Actions ---------------- */
 
   async function createRoom() {
     setStatus("Creating room…");
@@ -99,6 +159,15 @@ export default function Home() {
   }
 
   async function loadLeaderboard() {
+    const weekId = getWeekId();
+    const storedWeek = localStorage.getItem("cc-week");
+
+    if (storedWeek !== weekId) {
+      localStorage.setItem("cc-week", weekId);
+      localStorage.removeItem("cc-leaderboard");
+      setLeaderboard([]);
+    }
+
     const res = await genlayer.readContract({
       contractAddress: CONTRACT,
       method: "get_leaderboard",
@@ -106,9 +175,10 @@ export default function Home() {
     });
 
     const sorted = Object.entries(res)
-      .map(([a, x]) => [a, Number(x)] as [string, number])
+      .map(([addr, xp]) => [addr, Number(xp)] as [string, number])
       .sort((a, b) => b[1] - a[1]);
 
+    localStorage.setItem("cc-leaderboard", JSON.stringify(sorted));
     setLeaderboard(sorted);
   }
 
@@ -118,12 +188,12 @@ export default function Home() {
     <main style={{ fontFamily: "system-ui", background: "#fafafa", minHeight: "100vh", padding: 24 }}>
       <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
 
-        <h1 style={{ fontSize: 28, marginBottom: 4 }}>Consensus Countdown</h1>
+        <h1 style={{ fontSize: 28 }}>Consensus Countdown</h1>
         <p style={{ color: "#666", marginBottom: 24 }}>
           A GenLayer mini-game powered by Optimistic Democracy
         </p>
 
-        {/* Room setup */}
+        {/* Room Setup */}
         <section style={{ marginBottom: 24 }}>
           <h3>Room Setup</h3>
 
@@ -134,6 +204,18 @@ export default function Home() {
             style={{ width: "100%", padding: 10, marginBottom: 8 }}
           />
 
+          <div style={{ marginBottom: 8 }}>
+            <label>Prompt category: </label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              {Object.keys(PROMPT_PRESETS).map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+            <button onClick={() => loadRandomPrompt(category)} style={{ marginLeft: 8 }}>
+              Random Prompt
+            </button>
+          </div>
+
           <textarea
             placeholder="Question / Prompt"
             value={prompt}
@@ -141,7 +223,7 @@ export default function Home() {
             style={{ width: "100%", padding: 10, marginBottom: 8 }}
           />
 
-          <label style={{ fontSize: 14 }}>
+          <label>
             Countdown (seconds):
             <input
               type="number"
@@ -172,15 +254,11 @@ export default function Home() {
             <button disabled={!votingOpen} onClick={() => submitVote("no")} style={btnNo}>NO</button>
           </div>
 
-          <div style={{ marginTop: 12, fontSize: 14 }}>
+          <div style={{ marginTop: 12 }}>
             Votes → YES: <strong>{votesYes}</strong> | NO: <strong>{votesNo}</strong>
           </div>
 
-          {!votingOpen && (
-            <div style={{ marginTop: 8, color: "#b45309" }}>
-              Voting closed — ready to resolve
-            </div>
-          )}
+          {!votingOpen && <p style={{ color: "#b45309" }}>Voting closed — ready to resolve</p>}
         </section>
 
         {/* Resolution */}
@@ -194,7 +272,6 @@ export default function Home() {
           )}
         </section>
 
-        {/* Status */}
         {status && (
           <div style={{ background: "#eef2ff", padding: 10, borderRadius: 8, marginBottom: 24 }}>
             {status}
@@ -203,7 +280,7 @@ export default function Home() {
 
         {/* Leaderboard */}
         <section>
-          <h3>🏆 Leaderboard</h3>
+          <h3>🏆 Weekly Leaderboard</h3>
           <button onClick={loadLeaderboard} style={btnSecondary}>Load Leaderboard</button>
 
           {leaderboard.length > 0 && (
@@ -232,34 +309,8 @@ const btnBase = {
   fontWeight: 600,
 };
 
-const btnPrimary = {
-  ...btnBase,
-  background: "#111827",
-  color: "#fff",
-};
-
-const btnSecondary = {
-  ...btnBase,
-  background: "#e5e7eb",
-};
-
-const btnYes = {
-  ...btnBase,
-  background: "#16a34a",
-  color: "#fff",
-  flex: 1,
-};
-
-const btnNo = {
-  ...btnBase,
-  background: "#dc2626",
-  color: "#fff",
-  flex: 1,
-};
-
-const btnResolve = {
-  ...btnBase,
-  background: "#4f46e5",
-  color: "#fff",
-  width: "100%",
-};
+const btnPrimary = { ...btnBase, background: "#111827", color: "#fff" };
+const btnSecondary = { ...btnBase, background: "#e5e7eb" };
+const btnYes = { ...btnBase, background: "#16a34a", color: "#fff", flex: 1 };
+const btnNo = { ...btnBase, background: "#dc2626", color: "#fff", flex: 1 };
+const btnResolve = { ...btnBase, background: "#4f46e5", color: "#fff", width: "100%" };
