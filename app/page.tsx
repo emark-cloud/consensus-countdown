@@ -1,11 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { genlayer } from "../lib/genlayer";
 
 /* -------------------------------------------------------------------------- */
-/*                                   Config                                   */
+/*                              GenLayer StudioNet                             */
 /* -------------------------------------------------------------------------- */
+
+const GENLAYER_CHAIN = {
+  chainId: "0xF1BF", // 61999
+  chainName: "GenLayer StudioNet",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: ["https://studio.genlayer.com/api"],
+};
 
 const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT as string;
 
@@ -74,17 +85,35 @@ export default function Home() {
 
   const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
 
-  /* ---------------- Wallet ---------------- */
+  /* ---------------- Wallet + Chain ---------------- */
 
   async function connectWallet() {
-    if (!(window as any).ethereum) {
-      alert("Please install MetaMask to continue.");
+    const eth = (window as any).ethereum;
+    if (!eth) {
+      alert("Please install MetaMask");
       return;
     }
 
-    const accounts = await (window as any).ethereum.request({
-      method: "eth_requestAccounts",
-    });
+    const accounts = await eth.request({ method: "eth_requestAccounts" });
+    const chainId = await eth.request({ method: "eth_chainId" });
+
+    if (chainId !== GENLAYER_CHAIN.chainId) {
+      try {
+        await eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: GENLAYER_CHAIN.chainId }],
+        });
+      } catch (err: any) {
+        if (err.code === 4902) {
+          await eth.request({
+            method: "wallet_addEthereumChain",
+            params: [GENLAYER_CHAIN],
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
 
     setWallet(accounts[0]);
   }
@@ -140,10 +169,7 @@ export default function Home() {
   /* ---------------- Contract Actions ---------------- */
 
   async function createRoom() {
-    if (!wallet) {
-      alert("Connect wallet first");
-      return;
-    }
+    if (!wallet) return alert("Connect wallet first");
 
     setStatus("Creating room…");
     await genlayer.callContract({
@@ -213,134 +239,95 @@ export default function Home() {
   /* ---------------- UI ---------------- */
 
   return (
-    <main style={{ fontFamily: "system-ui", background: "#fafafa", minHeight: "100vh", padding: 24 }}>
-      <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
+    <main style={{ background: "#fafafa", minHeight: "100vh", padding: 24 }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12 }}>
 
-        <h1 style={{ fontSize: 28 }}>Consensus Countdown</h1>
-        <p style={{ color: "#666", marginBottom: 16 }}>
-          A GenLayer mini-game powered by Optimistic Democracy
-        </p>
+        <h1>Consensus Countdown</h1>
+        <p>A GenLayer mini-game powered by Optimistic Democracy</p>
 
         {!wallet ? (
           <button onClick={connectWallet} style={btnPrimary}>
-            Connect Wallet
+            Connect Wallet (StudioNet)
           </button>
         ) : (
-          <p style={{ fontSize: 12, color: "#555" }}>
+          <p style={{ fontSize: 12 }}>
             Connected: {wallet.slice(0, 6)}…{wallet.slice(-4)}
           </p>
         )}
 
-        {/* Room Setup */}
-        <section style={{ marginTop: 24 }}>
-          <h3>Room Setup</h3>
+        <h3>Room Setup</h3>
 
+        <input
+          placeholder="Room ID"
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+          style={input}
+        />
+
+        <div>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {Object.keys(PROMPT_PRESETS).map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+          <button onClick={() => loadRandomPrompt(category)}>Random Prompt</button>
+        </div>
+
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          style={input}
+        />
+
+        <label>
+          Countdown:
           <input
-            placeholder="Room ID"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            style={{ width: "100%", padding: 10, marginBottom: 8 }}
+            type="number"
+            value={duration}
+            onChange={(e) => setDuration(Number(e.target.value))}
+            style={{ marginLeft: 8, width: 80 }}
           />
+        </label>
 
-          <div style={{ marginBottom: 8 }}>
-            <label>Prompt category: </label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {Object.keys(PROMPT_PRESETS).map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-            <button onClick={() => loadRandomPrompt(category)} style={{ marginLeft: 8 }}>
-              Random Prompt
-            </button>
-          </div>
+        <button onClick={createRoom} style={btnPrimary}>
+          Create Room
+        </button>
 
-          <textarea
-            placeholder="Question / Prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            style={{ width: "100%", padding: 10, marginBottom: 8 }}
-          />
+        <h3>Voting</h3>
 
-          <label>
-            Countdown (seconds):
-            <input
-              type="number"
-              min={10}
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              style={{ marginLeft: 8, width: 80 }}
-            />
-          </label>
+        {timeLeft !== null && <p>⏱️ {timeLeft}s</p>}
 
-          <div style={{ marginTop: 12 }}>
-            <button onClick={createRoom} style={btnPrimary}>
-              Create Room
-            </button>
-          </div>
-        </section>
-
-        {/* Voting */}
-        <section style={{ marginTop: 24 }}>
-          <h3>Voting</h3>
-
-          {timeLeft !== null && (
-            <div style={{ fontSize: 20, marginBottom: 8 }}>
-              ⏱️ <strong>{timeLeft}s</strong>
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 12 }}>
-            <button disabled={!votingOpen} onClick={() => submitVote("yes")} style={btnYes}>
-              YES
-            </button>
-            <button disabled={!votingOpen} onClick={() => submitVote("no")} style={btnNo}>
-              NO
-            </button>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            Votes → YES: <strong>{votesYes}</strong> | NO: <strong>{votesNo}</strong>
-          </div>
-
-          {!votingOpen && <p style={{ color: "#b45309" }}>Voting closed — ready to resolve</p>}
-        </section>
-
-        {/* Resolution */}
-        <section style={{ marginTop: 24 }}>
-          <button onClick={resolveRoom} style={btnResolve}>
-            Resolve Outcome
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => submitVote("yes")} style={btnYes} disabled={!votingOpen}>
+            YES
           </button>
-
-          {output && (
-            <pre style={{ marginTop: 12, background: "#f3f4f6", padding: 12, borderRadius: 8 }}>
-              {JSON.stringify(output, null, 2)}
-            </pre>
-          )}
-        </section>
-
-        {status && (
-          <div style={{ background: "#eef2ff", padding: 10, borderRadius: 8, marginTop: 16 }}>
-            {status}
-          </div>
-        )}
-
-        {/* Leaderboard */}
-        <section style={{ marginTop: 24 }}>
-          <h3>🏆 Weekly Leaderboard</h3>
-          <button onClick={loadLeaderboard} style={btnSecondary}>
-            Load Leaderboard
+          <button onClick={() => submitVote("no")} style={btnNo} disabled={!votingOpen}>
+            NO
           </button>
+        </div>
 
-          {leaderboard.length > 0 && (
-            <ol style={{ marginTop: 12 }}>
-              {leaderboard.map(([addr, xp], i) => (
-                <li key={addr}>
-                  #{i + 1} — {addr.slice(0, 6)}…{addr.slice(-4)} — <strong>{xp}</strong> XP
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+        <p>
+          Votes → YES: {votesYes} | NO: {votesNo}
+        </p>
+
+        <button onClick={resolveRoom} style={btnResolve}>
+          Resolve Outcome
+        </button>
+
+        {status && <p>{status}</p>}
+
+        {output && <pre>{JSON.stringify(output, null, 2)}</pre>}
+
+        <h3>🏆 Weekly Leaderboard</h3>
+        <button onClick={loadLeaderboard}>Load Leaderboard</button>
+
+        <ol>
+          {leaderboard.map(([a, x], i) => (
+            <li key={a}>
+              #{i + 1} — {a.slice(0, 6)}…{a.slice(-4)} — {x} XP
+            </li>
+          ))}
+        </ol>
 
       </div>
     </main>
@@ -348,6 +335,8 @@ export default function Home() {
 }
 
 /* ---------------- Styles ---------------- */
+
+const input = { width: "100%", padding: 8, marginBottom: 8 };
 
 const btnBase = {
   padding: "10px 16px",
@@ -358,7 +347,6 @@ const btnBase = {
 };
 
 const btnPrimary = { ...btnBase, background: "#111827", color: "#fff" };
-const btnSecondary = { ...btnBase, background: "#e5e7eb" };
 const btnYes = { ...btnBase, background: "#16a34a", color: "#fff", flex: 1 };
 const btnNo = { ...btnBase, background: "#dc2626", color: "#fff", flex: 1 };
 const btnResolve = { ...btnBase, background: "#4f46e5", color: "#fff", width: "100%" };
