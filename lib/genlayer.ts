@@ -4,7 +4,8 @@ declare global {
   }
 }
 
-const RPC_URL = "https://rpc.genlayer.com";
+const RPC_URL = "https://studio.genlayer.com/api";
+
 
 async function rpc(method: string, params: any[]) {
   const res = await fetch(RPC_URL, {
