@@ -56,6 +56,8 @@ function getWeekId() {
 /* -------------------------------------------------------------------------- */
 
 export default function Home() {
+  const [wallet, setWallet] = useState<string | null>(null);
+
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [category, setCategory] = useState("Sports");
@@ -71,6 +73,21 @@ export default function Home() {
   const [votingOpen, setVotingOpen] = useState(true);
 
   const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
+
+  /* ---------------- Wallet ---------------- */
+
+  async function connectWallet() {
+    if (!(window as any).ethereum) {
+      alert("Please install MetaMask to continue.");
+      return;
+    }
+
+    const accounts = await (window as any).ethereum.request({
+      method: "eth_requestAccounts",
+    });
+
+    setWallet(accounts[0]);
+  }
 
   /* ---------------- Countdown ---------------- */
 
@@ -123,12 +140,18 @@ export default function Home() {
   /* ---------------- Contract Actions ---------------- */
 
   async function createRoom() {
+    if (!wallet) {
+      alert("Connect wallet first");
+      return;
+    }
+
     setStatus("Creating room…");
     await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "create_room",
       args: [roomId, prompt],
     });
+
     setTimeLeft(duration);
     setVotingOpen(true);
     setVotesYes(0);
@@ -137,23 +160,28 @@ export default function Home() {
   }
 
   async function submitVote(vote: "yes" | "no") {
-    if (!votingOpen) return;
+    if (!wallet || !votingOpen) return;
+
     setStatus(`Submitting ${vote.toUpperCase()} vote…`);
     await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "submit_vote",
       args: [roomId, vote],
     });
+
     setStatus(`Vote submitted: ${vote.toUpperCase()}`);
   }
 
   async function resolveRoom() {
+    if (!wallet) return;
+
     setStatus("Resolving via Optimistic Democracy…");
     const res = await genlayer.callContract({
       contractAddress: CONTRACT,
       method: "resolve_room",
       args: [roomId],
     });
+
     setOutput(res);
     setStatus("Consensus finalized.");
   }
@@ -189,12 +217,22 @@ export default function Home() {
       <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,0.05)" }}>
 
         <h1 style={{ fontSize: 28 }}>Consensus Countdown</h1>
-        <p style={{ color: "#666", marginBottom: 24 }}>
+        <p style={{ color: "#666", marginBottom: 16 }}>
           A GenLayer mini-game powered by Optimistic Democracy
         </p>
 
+        {!wallet ? (
+          <button onClick={connectWallet} style={btnPrimary}>
+            Connect Wallet
+          </button>
+        ) : (
+          <p style={{ fontSize: 12, color: "#555" }}>
+            Connected: {wallet.slice(0, 6)}…{wallet.slice(-4)}
+          </p>
+        )}
+
         {/* Room Setup */}
-        <section style={{ marginBottom: 24 }}>
+        <section style={{ marginTop: 24 }}>
           <h3>Room Setup</h3>
 
           <input
@@ -235,12 +273,14 @@ export default function Home() {
           </label>
 
           <div style={{ marginTop: 12 }}>
-            <button onClick={createRoom} style={btnPrimary}>Create Room</button>
+            <button onClick={createRoom} style={btnPrimary}>
+              Create Room
+            </button>
           </div>
         </section>
 
         {/* Voting */}
-        <section style={{ marginBottom: 24 }}>
+        <section style={{ marginTop: 24 }}>
           <h3>Voting</h3>
 
           {timeLeft !== null && (
@@ -250,8 +290,12 @@ export default function Home() {
           )}
 
           <div style={{ display: "flex", gap: 12 }}>
-            <button disabled={!votingOpen} onClick={() => submitVote("yes")} style={btnYes}>YES</button>
-            <button disabled={!votingOpen} onClick={() => submitVote("no")} style={btnNo}>NO</button>
+            <button disabled={!votingOpen} onClick={() => submitVote("yes")} style={btnYes}>
+              YES
+            </button>
+            <button disabled={!votingOpen} onClick={() => submitVote("no")} style={btnNo}>
+              NO
+            </button>
           </div>
 
           <div style={{ marginTop: 12 }}>
@@ -262,8 +306,10 @@ export default function Home() {
         </section>
 
         {/* Resolution */}
-        <section style={{ marginBottom: 24 }}>
-          <button onClick={resolveRoom} style={btnResolve}>Resolve Outcome</button>
+        <section style={{ marginTop: 24 }}>
+          <button onClick={resolveRoom} style={btnResolve}>
+            Resolve Outcome
+          </button>
 
           {output && (
             <pre style={{ marginTop: 12, background: "#f3f4f6", padding: 12, borderRadius: 8 }}>
@@ -273,15 +319,17 @@ export default function Home() {
         </section>
 
         {status && (
-          <div style={{ background: "#eef2ff", padding: 10, borderRadius: 8, marginBottom: 24 }}>
+          <div style={{ background: "#eef2ff", padding: 10, borderRadius: 8, marginTop: 16 }}>
             {status}
           </div>
         )}
 
         {/* Leaderboard */}
-        <section>
+        <section style={{ marginTop: 24 }}>
           <h3>🏆 Weekly Leaderboard</h3>
-          <button onClick={loadLeaderboard} style={btnSecondary}>Load Leaderboard</button>
+          <button onClick={loadLeaderboard} style={btnSecondary}>
+            Load Leaderboard
+          </button>
 
           {leaderboard.length > 0 && (
             <ol style={{ marginTop: 12 }}>
