@@ -1,3 +1,5 @@
+// lib/genlayer.ts
+
 declare global {
   interface Window {
     ethereum?: any;
@@ -6,6 +8,9 @@ declare global {
 
 const RPC_URL = "https://studio.genlayer.com/api";
 
+/* -------------------------------------------------------------------------- */
+/*                               Read Helpers                                 */
+/* -------------------------------------------------------------------------- */
 
 async function rpc(method: string, params: any[]) {
   const res = await fetch(RPC_URL, {
@@ -21,42 +26,17 @@ async function rpc(method: string, params: any[]) {
 
   const json = await res.json();
   if (json.error) {
-    throw new Error(json.error.message || "RPC Error");
+    throw new Error(json.error.message || "GenLayer RPC error");
   }
   return json.result;
 }
 
-async function getSenderAddress(): Promise<string> {
-  if (!window.ethereum) {
-    throw new Error("No wallet found. Please install MetaMask.");
-  }
-  const accounts = await window.ethereum.request({
-    method: "eth_requestAccounts",
-  });
-  return accounts[0];
-}
+/* -------------------------------------------------------------------------- */
+/*                              Public Interface                              */
+/* -------------------------------------------------------------------------- */
 
 export const genlayer = {
-  async callContract({
-    contractAddress,
-    method,
-    args,
-  }: {
-    contractAddress: string;
-    method: string;
-    args: any[];
-  }) {
-    const from = await getSenderAddress();
-
-    return rpc("genlayer_callContract", [
-      {
-        from,
-        contractAddress,
-        method,
-        args,
-      },
-    ]);
-  },
+  /* ---------------- Read (safe, stateless) ---------------- */
 
   async readContract({
     contractAddress,
@@ -74,5 +54,45 @@ export const genlayer = {
         args,
       },
     ]);
+  },
+
+  /* ---------------- Write (wallet-backed) ---------------- */
+
+  async callContract({
+    contractAddress,
+    method,
+    args,
+  }: {
+    contractAddress: string;
+    method: string;
+    args: any[];
+  }) {
+    if (!window.ethereum) {
+      throw new Error("MetaMask not available");
+    }
+
+    const eth = window.ethereum;
+
+    // Ensure wallet permission
+    const [from] = await eth.request({
+      method: "eth_requestAccounts",
+    });
+
+    /**
+     * IMPORTANT:
+     * Writes must go through the wallet provider,
+     * not a raw fetch() call.
+     */
+    return eth.request({
+      method: "genlayer_callContract",
+      params: [
+        {
+          from,
+          contractAddress,
+          method,
+          args,
+        },
+      ],
+    });
   },
 };
