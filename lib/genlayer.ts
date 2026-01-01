@@ -6,15 +6,10 @@ declare global {
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*                            GenLayer StudioNet                              */
-/* -------------------------------------------------------------------------- */
-
 const RPC_URL = "https://studio.genlayer.com/api";
-const REQUIRED_CHAIN_ID = "0xF22F"; // 61999 decimal
 
 /* -------------------------------------------------------------------------- */
-/*                              Read Utilities                                */
+/*                               Read (RPC)                                   */
 /* -------------------------------------------------------------------------- */
 
 async function rpc(method: string, params: any[]) {
@@ -41,7 +36,7 @@ async function rpc(method: string, params: any[]) {
 /* -------------------------------------------------------------------------- */
 
 export const genlayer = {
-  /* ---------------- Read (pure RPC) ---------------- */
+  /* ---------------- Read ---------------- */
 
   async readContract({
     contractAddress,
@@ -61,7 +56,7 @@ export const genlayer = {
     ]);
   },
 
-  /* ---------------- Write (wallet-backed) ---------------- */
+  /* ---------------- Write (CRITICAL FIX) ---------------- */
 
   async callContract({
     contractAddress,
@@ -73,37 +68,33 @@ export const genlayer = {
     args: any[];
   }) {
     if (!window.ethereum) {
-      throw new Error("MetaMask is required for GenLayer writes");
+      throw new Error("MetaMask required");
     }
 
     const eth = window.ethereum;
-
-    // Ensure wallet access
-    const [from] = await eth.request({
-      method: "eth_requestAccounts",
-    });
-
-    // Enforce correct chain
-    const chainId = await eth.request({ method: "eth_chainId" });
-    if (chainId !== REQUIRED_CHAIN_ID) {
-      throw new Error(
-        `Wrong network. Please switch to GenLayer StudioNet (chainId ${REQUIRED_CHAIN_ID}).`
-      );
-    }
+    const [from] = await eth.request({ method: "eth_requestAccounts" });
 
     /**
-     * IMPORTANT:
-     * Writes MUST go through the wallet provider.
-     * fetch() WILL NOT work here.
+     * THIS IS THE KEY:
+     * We send the GenLayer call via eth_sendTransaction,
+     * exactly like genlayer-unscramble-game.
      */
     return eth.request({
-      method: "genlayer_callContract",
+      method: "eth_sendTransaction",
       params: [
         {
           from,
-          contractAddress,
-          method,
-          args,
+          to: contractAddress,
+          data: JSON.stringify({
+            method: "genlayer_callContract",
+            params: [
+              {
+                contractAddress,
+                method,
+                args,
+              },
+            ],
+          }),
         },
       ],
     });
