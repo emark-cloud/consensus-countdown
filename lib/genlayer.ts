@@ -6,10 +6,15 @@ declare global {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*                            GenLayer StudioNet                              */
+/* -------------------------------------------------------------------------- */
+
 const RPC_URL = "https://studio.genlayer.com/api";
+const REQUIRED_CHAIN_ID = "0xF22F"; // 61999 decimal
 
 /* -------------------------------------------------------------------------- */
-/*                               Read Helpers                                 */
+/*                              Read Utilities                                */
 /* -------------------------------------------------------------------------- */
 
 async function rpc(method: string, params: any[]) {
@@ -32,11 +37,11 @@ async function rpc(method: string, params: any[]) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Public Interface                              */
+/*                              Public API                                    */
 /* -------------------------------------------------------------------------- */
 
 export const genlayer = {
-  /* ---------------- Read (safe, stateless) ---------------- */
+  /* ---------------- Read (pure RPC) ---------------- */
 
   async readContract({
     contractAddress,
@@ -68,20 +73,28 @@ export const genlayer = {
     args: any[];
   }) {
     if (!window.ethereum) {
-      throw new Error("MetaMask not available");
+      throw new Error("MetaMask is required for GenLayer writes");
     }
 
     const eth = window.ethereum;
 
-    // Ensure wallet permission
+    // Ensure wallet access
     const [from] = await eth.request({
       method: "eth_requestAccounts",
     });
 
+    // Enforce correct chain
+    const chainId = await eth.request({ method: "eth_chainId" });
+    if (chainId !== REQUIRED_CHAIN_ID) {
+      throw new Error(
+        `Wrong network. Please switch to GenLayer StudioNet (chainId ${REQUIRED_CHAIN_ID}).`
+      );
+    }
+
     /**
      * IMPORTANT:
-     * Writes must go through the wallet provider,
-     * not a raw fetch() call.
+     * Writes MUST go through the wallet provider.
+     * fetch() WILL NOT work here.
      */
     return eth.request({
       method: "genlayer_callContract",
