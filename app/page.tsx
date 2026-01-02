@@ -4,21 +4,10 @@ import { useEffect, useState } from "react";
 import { genlayer } from "../lib/genlayer";
 
 /* -------------------------------------------------------------------------- */
-/*                         GenLayer StudioNet Config                           */
+/*                              Constants                                     */
 /* -------------------------------------------------------------------------- */
 
-const GENLAYER_CHAIN = {
-  chainId: "0xF22F", // 61999
-  chainName: "GenLayer StudioNet",
-  nativeCurrency: {
-    name: "Ether",
-    symbol: "ETH",
-    decimals: 18,
-  },
-  rpcUrls: ["https://studio.genlayer.com/api"],
-};
-
-const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT as string;
+const CONTRACT = "0x65090e7324b754a653764AeE7Ed2d0FB7E698fB5";
 
 /* -------------------------------------------------------------------------- */
 /*                              Prompt Presets                                */
@@ -48,26 +37,10 @@ const PROMPT_PRESETS: Record<string, string[]> = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*                              Weekly Reset                                  */
-/* -------------------------------------------------------------------------- */
-
-function getWeekId() {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const week = Math.floor(
-    (Date.UTC(year, now.getUTCMonth(), now.getUTCDate()) -
-      Date.UTC(year, 0, 1)) /
-      (7 * 24 * 60 * 60 * 1000)
-  );
-  return `${year}-W${week}`;
-}
-
-/* -------------------------------------------------------------------------- */
 /*                                   Page                                     */
 /* -------------------------------------------------------------------------- */
 
 export default function Home() {
-  const [hasEthereum, setHasEthereum] = useState(false);
   const [wallet, setWallet] = useState<string | null>(null);
 
   const [roomId, setRoomId] = useState("");
@@ -75,81 +48,30 @@ export default function Home() {
   const [category, setCategory] = useState("Sports");
 
   const [status, setStatus] = useState("");
-  const [output, setOutput] = useState<any>(null);
+  const [pendingTx, setPendingTx] = useState<string | null>(null);
+
+  const [roomActive, setRoomActive] = useState(false);
 
   const [votesYes, setVotesYes] = useState(0);
   const [votesNo, setVotesNo] = useState(0);
 
   const [duration, setDuration] = useState(60);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [votingOpen, setVotingOpen] = useState(true);
+  const [votingOpen, setVotingOpen] = useState(false);
 
-  const [leaderboard, setLeaderboard] = useState<[string, number][]>([]);
-
-  /* ---------------- Detect MetaMask safely ---------------- */
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const checkEthereum = () => {
-      if ((window as any).ethereum) {
-        setHasEthereum(true);
-      }
-    };
-
-    checkEthereum();
-
-    window.addEventListener("ethereum#initialized", checkEthereum, {
-      once: true,
-    });
-
-    setTimeout(checkEthereum, 3000);
-
-    return () => {
-      window.removeEventListener("ethereum#initialized", checkEthereum);
-    };
-  }, []);
-
-  /* ---------------- Wallet + Chain ---------------- */
+  /* ---------------- Wallet ---------------- */
 
   async function connectWallet() {
-    if (!hasEthereum) {
-      alert("MetaMask not detected. Please install MetaMask and refresh.");
+    if (!(window as any).ethereum) {
+      alert("MetaMask is required");
       return;
     }
 
-    const eth = (window as any).ethereum;
+    const accounts = await (window as any).ethereum.request({
+      method: "eth_requestAccounts",
+    });
 
-    try {
-      const accounts = await eth.request({
-        method: "eth_requestAccounts",
-      });
-
-      const chainId = await eth.request({ method: "eth_chainId" });
-
-      if (chainId !== GENLAYER_CHAIN.chainId) {
-        try {
-          await eth.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: GENLAYER_CHAIN.chainId }],
-          });
-        } catch (err: any) {
-          if (err.code === 4902) {
-            await eth.request({
-              method: "wallet_addEthereumChain",
-              params: [GENLAYER_CHAIN],
-            });
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      setWallet(accounts[0]);
-    } catch (err) {
-      console.error(err);
-      alert("Wallet connection rejected");
-    }
+    setWallet(accounts[0]);
   }
 
   /* ---------------- Countdown ---------------- */
@@ -160,37 +82,10 @@ export default function Home() {
       setVotingOpen(false);
       return;
     }
+
     const t = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
     return () => clearTimeout(t);
   }, [timeLeft]);
-
-  /* ---------------- Live Vote Stats ---------------- */
-
-  useEffect(() => {
-    if (!roomId) return;
-
-    const poll = setInterval(async () => {
-      try {
-        const res = await genlayer.readContract({
-          contractAddress: CONTRACT,
-          method: "get_votes",
-          args: [roomId],
-        });
-
-        let y = 0;
-        let n = 0;
-        Object.values(res || {}).forEach((v: any) => {
-          if (v === "yes") y++;
-          if (v === "no") n++;
-        });
-
-        setVotesYes(y);
-        setVotesNo(n);
-      } catch {}
-    }, 3000);
-
-    return () => clearInterval(poll);
-  }, [roomId]);
 
   /* ---------------- Helpers ---------------- */
 
@@ -203,89 +98,84 @@ export default function Home() {
   /* ---------------- Contract Actions ---------------- */
 
   async function createRoom() {
-    if (!wallet) return alert("Connect wallet first");
+    if (!wallet) {
+      alert("Connect wallet first");
+      return;
+    }
 
-    setStatus("Creating room…");
-    await genlayer.callContract({
-      contractAddress: CONTRACT,
-      method: "create_room",
-      args: [roomId, prompt],
-    });
+    if (!roomId || !prompt) {
+      alert("Room ID and prompt are required");
+      return;
+    }
 
-    setTimeLeft(duration);
-    setVotingOpen(true);
-    setVotesYes(0);
-    setVotesNo(0);
-    setStatus("Room created. Voting is open.");
+    try {
+      setStatus("Please confirm the transaction in MetaMask…");
+
+      const txHash = await genlayer.callContract({
+        contractAddress: CONTRACT,
+        method: "create_room",
+        args: [roomId, prompt],
+      });
+
+      /* ---------------- OPTIMISTIC UPDATE ---------------- */
+
+      setPendingTx(txHash ?? null);
+      setRoomActive(true);
+      setVotingOpen(true);
+      setTimeLeft(duration);
+      setVotesYes(0);
+      setVotesNo(0);
+
+      setStatus(
+        "Transaction submitted. Validators are reviewing the room (Optimistic Democracy)."
+      );
+    } catch (err) {
+      console.error(err);
+      setStatus("Transaction rejected or failed.");
+    }
   }
 
   async function submitVote(vote: "yes" | "no") {
-    if (!wallet || !votingOpen) return;
+    if (!wallet || !roomActive || !votingOpen) return;
 
-    setStatus(`Submitting ${vote.toUpperCase()} vote…`);
-    await genlayer.callContract({
-      contractAddress: CONTRACT,
-      method: "submit_vote",
-      args: [roomId, vote],
-    });
+    try {
+      setStatus(`Submitting ${vote.toUpperCase()} vote…`);
 
-    setStatus(`Vote submitted: ${vote.toUpperCase()}`);
-  }
+      await genlayer.callContract({
+        contractAddress: CONTRACT,
+        method: "submit_vote",
+        args: [roomId, vote],
+      });
 
-  async function resolveRoom() {
-    if (!wallet) return;
+      if (vote === "yes") setVotesYes((v) => v + 1);
+      if (vote === "no") setVotesNo((v) => v + 1);
 
-    setStatus("Resolving via Optimistic Democracy…");
-    const res = await genlayer.callContract({
-      contractAddress: CONTRACT,
-      method: "resolve_room",
-      args: [roomId],
-    });
-
-    setOutput(res);
-    setStatus("Consensus finalized.");
-  }
-
-  async function loadLeaderboard() {
-    const weekId = getWeekId();
-    const storedWeek = localStorage.getItem("cc-week");
-
-    if (storedWeek !== weekId) {
-      localStorage.setItem("cc-week", weekId);
-      localStorage.removeItem("cc-leaderboard");
-      setLeaderboard([]);
+      setStatus(`Vote submitted: ${vote.toUpperCase()}`);
+    } catch (err) {
+      console.error(err);
+      setStatus("Vote failed.");
     }
-
-    const res = await genlayer.readContract({
-      contractAddress: CONTRACT,
-      method: "get_leaderboard",
-      args: [],
-    });
-
-    const sorted = Object.entries(res)
-      .map(([addr, xp]) => [addr, Number(xp)] as [string, number])
-      .sort((a, b) => b[1] - a[1]);
-
-    localStorage.setItem("cc-leaderboard", JSON.stringify(sorted));
-    setLeaderboard(sorted);
   }
 
   /* ---------------- UI ---------------- */
 
   return (
     <main style={{ background: "#fafafa", minHeight: "100vh", padding: 24 }}>
-      <div style={{ maxWidth: 760, margin: "0 auto", background: "#fff", padding: 24, borderRadius: 12 }}>
-
+      <div
+        style={{
+          maxWidth: 760,
+          margin: "0 auto",
+          background: "#fff",
+          padding: 24,
+          borderRadius: 12,
+        }}
+      >
         <h1>Consensus Countdown</h1>
         <p>A GenLayer mini-game powered by Optimistic Democracy</p>
 
         {!wallet ? (
-          <button
-            onClick={connectWallet}
-            style={btnPrimary}
-            disabled={!hasEthereum}
-          >
-            {hasEthereum ? "Connect Wallet (StudioNet)" : "Waiting for MetaMask…"}
+          <button onClick={connectWallet} style={btnPrimary}>
+            Connect Wallet
           </button>
         ) : (
           <p style={{ fontSize: 12 }}>
@@ -308,10 +198,13 @@ export default function Home() {
               <option key={c}>{c}</option>
             ))}
           </select>
-          <button onClick={() => loadRandomPrompt(category)}>Random Prompt</button>
+          <button onClick={() => loadRandomPrompt(category)}>
+            Random Prompt
+          </button>
         </div>
 
         <textarea
+          placeholder="Prompt"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           style={input}
@@ -331,15 +224,31 @@ export default function Home() {
           Create Room
         </button>
 
+        {status && <p>{status}</p>}
+
+        {pendingTx && (
+          <p style={{ fontSize: 12, color: "#555" }}>
+            ⏳ Pending tx: {pendingTx.slice(0, 10)}…
+          </p>
+        )}
+
         <h3>Voting</h3>
 
         {timeLeft !== null && <p>⏱️ {timeLeft}s</p>}
 
         <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={() => submitVote("yes")} style={btnYes} disabled={!votingOpen}>
+          <button
+            onClick={() => submitVote("yes")}
+            style={btnYes}
+            disabled={!roomActive || !votingOpen}
+          >
             YES
           </button>
-          <button onClick={() => submitVote("no")} style={btnNo} disabled={!votingOpen}>
+          <button
+            onClick={() => submitVote("no")}
+            style={btnNo}
+            disabled={!roomActive || !votingOpen}
+          >
             NO
           </button>
         </div>
@@ -347,32 +256,14 @@ export default function Home() {
         <p>
           Votes → YES: {votesYes} | NO: {votesNo}
         </p>
-
-        <button onClick={resolveRoom} style={btnResolve}>
-          Resolve Outcome
-        </button>
-
-        {status && <p>{status}</p>}
-
-        {output && <pre>{JSON.stringify(output, null, 2)}</pre>}
-
-        <h3>🏆 Weekly Leaderboard</h3>
-        <button onClick={loadLeaderboard}>Load Leaderboard</button>
-
-        <ol>
-          {leaderboard.map(([a, x], i) => (
-            <li key={a}>
-              #{i + 1} — {a.slice(0, 6)}…{a.slice(-4)} — {x} XP
-            </li>
-          ))}
-        </ol>
-
       </div>
     </main>
   );
 }
 
-/* ---------------- Styles ---------------- */
+/* -------------------------------------------------------------------------- */
+/*                                   Styles                                   */
+/* -------------------------------------------------------------------------- */
 
 const input = { width: "100%", padding: 8, marginBottom: 8 };
 
@@ -387,4 +278,3 @@ const btnBase = {
 const btnPrimary = { ...btnBase, background: "#111827", color: "#fff" };
 const btnYes = { ...btnBase, background: "#16a34a", color: "#fff", flex: 1 };
 const btnNo = { ...btnBase, background: "#dc2626", color: "#fff", flex: 1 };
-const btnResolve = { ...btnBase, background: "#4f46e5", color: "#fff", width: "100%" };
