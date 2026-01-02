@@ -4,10 +4,22 @@ import { useEffect, useState } from "react";
 import { genlayer } from "../lib/genlayer";
 
 /* -------------------------------------------------------------------------- */
-/*                              Constants                                     */
+/*                               Constants                                    */
 /* -------------------------------------------------------------------------- */
 
 const CONTRACT = "0x65090e7324b754a653764AeE7Ed2d0FB7E698fB5";
+const GENLAYER_CHAIN_ID = "0xF22F"; // 61999
+
+const GENLAYER_CHAIN = {
+  chainId: GENLAYER_CHAIN_ID,
+  chainName: "GenLayer StudioNet",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: ["https://studio.genlayer.com/api"],
+};
 
 /* -------------------------------------------------------------------------- */
 /*                              Prompt Presets                                */
@@ -67,9 +79,36 @@ export default function Home() {
       return;
     }
 
-    const accounts = await (window as any).ethereum.request({
+    const eth = (window as any).ethereum;
+
+    // 1. Request accounts
+    const accounts = await eth.request({
       method: "eth_requestAccounts",
     });
+
+    // 2. Check chain
+    const currentChain = await eth.request({
+      method: "eth_chainId",
+    });
+
+    // 3. Switch or add GenLayer StudioNet
+    if (currentChain !== GENLAYER_CHAIN_ID) {
+      try {
+        await eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: GENLAYER_CHAIN_ID }],
+        });
+      } catch (err: any) {
+        if (err.code === 4902) {
+          await eth.request({
+            method: "wallet_addEthereumChain",
+            params: [GENLAYER_CHAIN],
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
 
     setWallet(accounts[0]);
   }
@@ -117,8 +156,7 @@ export default function Home() {
         args: [roomId, prompt],
       });
 
-      /* ---------------- OPTIMISTIC UPDATE ---------------- */
-
+      // Optimistic UI update
       setPendingTx(txHash ?? null);
       setRoomActive(true);
       setVotingOpen(true);
@@ -179,7 +217,7 @@ export default function Home() {
           </button>
         ) : (
           <p style={{ fontSize: 12 }}>
-            Connected: {wallet.slice(0, 6)}…{wallet.slice(-4)}
+            Connected: {wallet.slice(0, 6)}…{wallet.slice(-4)} (GenLayer StudioNet)
           </p>
         )}
 
