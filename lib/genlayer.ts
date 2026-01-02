@@ -6,7 +6,11 @@ declare global {
   }
 }
 
+const RPC_URL = "https://studio.genlayer.com/api";
+
 export const genlayer = {
+  /* ---------------- WRITE ---------------- */
+
   async callContract({
     contractAddress,
     method,
@@ -17,34 +21,45 @@ export const genlayer = {
     args: any[];
   }) {
     if (!window.ethereum) {
-      throw new Error("MetaMask is required");
+      throw new Error("MetaMask required");
     }
 
     const [from] = await window.ethereum.request({
       method: "eth_requestAccounts",
     });
 
-    // IMPORTANT: GenLayer write calls are sent via eth_sendTransaction
-    return window.ethereum.request({
-      method: "eth_sendTransaction",
-      params: [
-        {
-          from,
-          to: contractAddress,
-          data: JSON.stringify({
-            method: "genlayer_callContract",
-            params: [
-              {
-                contractAddress,
-                method,
-                args,
-              },
-            ],
-          }),
-        },
-      ],
+    /**
+     * IMPORTANT:
+     * GenLayer writes go through genlayer_callContract,
+     * NOT eth_sendTransaction.
+     */
+    const res = await fetch(RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "genlayer_callContract",
+        params: [
+          {
+            from,
+            contractAddress,
+            method,
+            args,
+          },
+        ],
+      }),
     });
+
+    const json = await res.json();
+    if (json.error) {
+      throw new Error(json.error.message);
+    }
+
+    return json.result;
   },
+
+  /* ---------------- READ ---------------- */
 
   async readContract({
     contractAddress,
@@ -55,7 +70,7 @@ export const genlayer = {
     method: string;
     args: any[];
   }) {
-    const res = await fetch("https://studio.genlayer.com/api", {
+    const res = await fetch(RPC_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
