@@ -1,5 +1,6 @@
 // lib/genlayer.ts
-import { createClient } from "genlayer-js";
+import { createClient } from "@genlayer/client";
+
 
 const RPC_URL = "https://studio.genlayer.com/api";
 
