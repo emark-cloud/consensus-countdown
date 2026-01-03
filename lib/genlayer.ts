@@ -15,22 +15,17 @@ export const GENLAYER_CHAIN = {
 };
 
 /* -------------------------------------------------------
-   CONTRACT ABI (ConsensusCountdown)
+   CONTRACT ABI (WRITE ONLY)
+   ⚠️ Used ONLY for write transactions
 ------------------------------------------------------- */
 export const CONTRACT_ABI = [
-  // write
   "function create_room(string room_id, string prompt)",
   "function submit_vote(string room_id, string vote)",
   "function resolve_room(string room_id)",
-
-  // read
-  "function get_room(string room_id) view returns (tuple(string room_id, string prompt, bool resolved, string final_outcome))",
-  "function get_votes(string room_id) view returns (tuple(address voter, string vote)[])",
-  "function get_leaderboard() view returns (tuple(address player, uint256 score)[])",
 ];
 
 /* -------------------------------------------------------
-   ENSURE CHAIN
+   ENSURE GENLAYER CHAIN
 ------------------------------------------------------- */
 export async function ensureGenLayerChain(): Promise<void> {
   if (!window.ethereum) {
@@ -50,13 +45,44 @@ export async function ensureGenLayerChain(): Promise<void> {
 }
 
 /* -------------------------------------------------------
-   PROVIDERS
+   READ (GenLayer RPC)
+   ⚠️ DO NOT use ethers here
 ------------------------------------------------------- */
-function getReadProvider() {
-  return new ethers.JsonRpcProvider(GENLAYER_CHAIN.rpcUrls[0]);
+export async function genlayerRead(
+  contractAddress: string,
+  method: string,
+  args: any[] = []
+): Promise<any> {
+  const payload = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "gen_call",
+    params: {
+      to: contractAddress,
+      method,
+      args,
+    },
+  };
+
+  const res = await fetch("https://studio.genlayer.com/api", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json();
+
+  if (json.error) {
+    throw new Error(json.error.message || "GenLayer read failed");
+  }
+
+  return json.result;
 }
 
-async function getWriteSigner() {
+/* -------------------------------------------------------
+   WRITE (Standard EVM Transaction)
+------------------------------------------------------- */
+async function getSigner() {
   if (!window.ethereum) {
     throw new Error("MetaMask not available");
   }
@@ -65,27 +91,6 @@ async function getWriteSigner() {
   return provider.getSigner();
 }
 
-/* -------------------------------------------------------
-   READ
-------------------------------------------------------- */
-export async function genlayerRead(
-  contractAddress: string,
-  method: string,
-  args: any[] = []
-): Promise<any> {
-  const provider = getReadProvider();
-  const contract = new ethers.Contract(
-    contractAddress,
-    CONTRACT_ABI,
-    provider
-  );
-
-  return contract[method](...args);
-}
-
-/* -------------------------------------------------------
-   WRITE (STANDARD EVM TX)
-------------------------------------------------------- */
 export async function genlayerWrite(
   contractAddress: string,
   method: string,
@@ -93,7 +98,7 @@ export async function genlayerWrite(
 ): Promise<string> {
   await ensureGenLayerChain();
 
-  const signer = await getWriteSigner();
+  const signer = await getSigner();
   const contract = new ethers.Contract(
     contractAddress,
     CONTRACT_ABI,
