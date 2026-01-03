@@ -16,7 +16,6 @@ export const GENLAYER_CHAIN = {
 
 /* -------------------------------------------------------
    CONTRACT ABI (WRITE METHODS ONLY)
-   ⚠️ DO NOT include view methods here
 ------------------------------------------------------- */
 export const CONTRACT_ABI = [
   "function create_room(string room_id, string prompt)",
@@ -46,7 +45,8 @@ export async function ensureGenLayerChain(): Promise<void> {
 
 /* -------------------------------------------------------
    READ: GenLayer RPC (gen_call)
-   ⚠️ GenLayer expects `contract`, NOT `to`
+   -> NOTE: Studio expects positional params:
+     params: [ contractAddress, { method: "name", args: [...] } ]
 ------------------------------------------------------- */
 export async function genlayerRead(
   contractAddress: string,
@@ -58,9 +58,11 @@ export async function genlayerRead(
     id: Date.now(),
     method: "gen_call",
     params: [
-      contractAddress, // contract address (positional)
-      method,          // method name
-      args             // arguments array
+      contractAddress,
+      {
+        method,
+        args: args || [],
+      },
     ],
   };
 
@@ -70,16 +72,30 @@ export async function genlayerRead(
     body: JSON.stringify(payload),
   });
 
-  const json = await res.json();
+  const text = await res.text().catch(() => "");
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch (parseErr) {
+    // include raw text when parse fails
+    throw new Error(
+      `GenLayer read failed: non-JSON response. HTTP ${res.status}. body: ${text}`
+    );
+  }
+
+  if (!json) {
+    throw new Error(`GenLayer read failed: empty response. HTTP ${res.status}`);
+  }
 
   if (json.error) {
-    throw new Error(json.error.message || "GenLayer read failed");
+    // bubble full error info
+    const errMsg = json.error.message || "GenLayer read returned error";
+    const extra = JSON.stringify(json.error, null, 2);
+    throw new Error(`${errMsg}\nRPC error: ${extra}`);
   }
 
   return json.result;
 }
-
-
 
 /* -------------------------------------------------------
    WRITE: Standard EVM transaction (MetaMask + ethers)
@@ -101,11 +117,7 @@ export async function genlayerWrite(
   await ensureGenLayerChain();
 
   const signer = await getSigner();
-  const contract = new ethers.Contract(
-    contractAddress,
-    CONTRACT_ABI,
-    signer
-  );
+  const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
 
   const tx = await contract[method](...args);
   await tx.wait();
