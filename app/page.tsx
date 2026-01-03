@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   genlayerRead,
   genlayerWrite,
@@ -11,7 +11,6 @@ import {
    CONFIG
 ------------------------------------------------------- */
 const CONTRACT_ADDRESS = "0xBf8D00b0F61B1FE4Ad532fFf982633d8b67E0429";
-const POLL_INTERVAL = 2000;
 
 /* -------------------------------------------------------
    PAGE
@@ -30,14 +29,12 @@ export default function Page() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pollRef = useRef<number | null>(null);
-
   /* -------------------------------------------------------
      READ HELPERS
   ------------------------------------------------------- */
   async function loadRoom(id: string) {
     const r = await genlayerRead(CONTRACT_ADDRESS, "get_room", [id]);
-    setRoom(Object.keys(r).length ? r : null);
+    setRoom(r && Object.keys(r).length ? r : null);
 
     const v = await genlayerRead(CONTRACT_ADDRESS, "get_votes", [id]);
     setVotes(v || {});
@@ -48,41 +45,44 @@ export default function Page() {
     setLeaderboard(lb || {});
   }
 
-  function startPolling(id: string) {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = window.setInterval(() => {
-      loadRoom(id).catch(() => {});
-    }, POLL_INTERVAL);
+  /* -------------------------------------------------------
+     ACTIONS (STANDARD WALLET TXs)
+  ------------------------------------------------------- */
+  async function connectWallet() {
+    setError(null);
+    try {
+      await ensureGenLayerChain();
+      setStatus("Wallet connected to GenLayer StudioNet");
+    } catch (e: any) {
+      setError(e.message || "Failed to connect wallet");
+    }
   }
 
-  /* -------------------------------------------------------
-     ACTIONS
-  ------------------------------------------------------- */
   async function createRoom() {
     setError(null);
 
     if (!roomId.trim()) {
-      setError("Room ID is required.");
+      setError("Room ID is required");
       return;
     }
 
     if (!prompt.trim()) {
-      setError("Please write a prompt. Players define the question.");
+      setError("Prompt is required");
       return;
     }
 
     try {
-      setStatus("Switching to GenLayer StudioNet...");
-      await ensureGenLayerChain();
+      setStatus("Creating room (sign transaction)…");
+      await genlayerWrite(CONTRACT_ADDRESS, "create_room", [
+        roomId,
+        prompt,
+      ]);
 
-      setStatus("Creating room...");
-      await genlayerWrite(CONTRACT_ADDRESS, "create_room", [roomId, prompt]);
-
-      setStatus("Room submitted. Waiting for chain...");
-      startPolling(roomId);
-    } catch (err: any) {
+      setStatus("Room created. Fetching state…");
+      await loadRoom(roomId);
+    } catch (e: any) {
+      setError(e.message || "Create room failed");
       setStatus(null);
-      setError(err.message || "Failed to create room.");
     }
   }
 
@@ -90,22 +90,23 @@ export default function Page() {
     setError(null);
 
     if (!room) {
-      setError("No active room.");
+      setError("No active room");
       return;
     }
 
     try {
-      setStatus("Submitting vote...");
-      await ensureGenLayerChain();
-
-      await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [roomId, vote]);
+      setStatus(`Submitting vote (${vote})…`);
+      await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [
+        roomId,
+        vote,
+      ]);
 
       await loadRoom(roomId);
       await loadLeaderboard();
       setStatus(null);
-    } catch (err: any) {
+    } catch (e: any) {
+      setError(e.message || "Vote failed");
       setStatus(null);
-      setError(err.message || "Vote failed.");
     }
   }
 
@@ -113,20 +114,20 @@ export default function Page() {
     setError(null);
 
     if (!room) {
-      setError("No active room.");
+      setError("No active room");
       return;
     }
 
     try {
-      setStatus("Resolving via AI + validators...");
-      await ensureGenLayerChain();
-
+      setStatus("Resolving room (AI + validators)…");
       await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [roomId]);
 
-      startPolling(roomId);
-    } catch (err: any) {
+      await loadRoom(roomId);
+      await loadLeaderboard();
       setStatus(null);
-      setError(err.message || "Resolution failed.");
+    } catch (e: any) {
+      setError(e.message || "Resolve failed");
+      setStatus(null);
     }
   }
 
@@ -135,9 +136,6 @@ export default function Page() {
   ------------------------------------------------------- */
   useEffect(() => {
     loadLeaderboard().catch(() => {});
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
   }, []);
 
   /* -------------------------------------------------------
@@ -150,8 +148,15 @@ export default function Page() {
         Players propose a statement. Validators decide consensus.
       </p>
 
-      {/* CREATE ROOM */}
+      {/* CONNECT */}
       <section>
+        <button onClick={connectWallet}>
+          Connect Wallet (GenLayer StudioNet)
+        </button>
+      </section>
+
+      {/* CREATE ROOM */}
+      <section style={{ marginTop: 24 }}>
         <h3>Create Room</h3>
 
         <label>Room ID</label>
@@ -161,33 +166,26 @@ export default function Page() {
           style={{ width: "100%" }}
         />
 
-        <label style={{ marginTop: 10 }}>
-          Prompt{" "}
-          <span style={{ color: "#999" }}>
-            (players define the question)
-          </span>
-        </label>
+        <label style={{ marginTop: 8 }}>Prompt</label>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. Was this performance overrated?"
           rows={4}
+          placeholder="e.g. Was this performance overrated?"
           style={{ width: "100%" }}
         />
 
-        <button onClick={createRoom} style={{ marginTop: 12 }}>
+        <button onClick={createRoom} style={{ marginTop: 10 }}>
           Create Room
         </button>
       </section>
 
-      {/* ROOM STATE */}
+      {/* ROOM */}
       <section style={{ marginTop: 30 }}>
-        <h3>Room</h3>
+        <h3>Room State</h3>
         {room ? (
-          <div style={{ background: "#f8f8f8", padding: 12 }}>
-            <p>
-              <strong>{room.prompt}</strong>
-            </p>
+          <div style={{ background: "#f5f5f5", padding: 12 }}>
+            <p><strong>{room.prompt}</strong></p>
             <p>Resolved: {room.resolved ? "Yes" : "No"}</p>
             <p>Outcome: {room.final_outcome || "—"}</p>
           </div>
@@ -196,7 +194,7 @@ export default function Page() {
         )}
       </section>
 
-      {/* VOTING */}
+      {/* ACTIONS */}
       <section style={{ marginTop: 20 }}>
         <button onClick={() => submitVote("yes")}>YES</button>
         <button onClick={() => submitVote("no")} style={{ marginLeft: 10 }}>
@@ -216,7 +214,7 @@ export default function Page() {
         </pre>
       </section>
 
-      {/* STATUS / ERRORS */}
+      {/* STATUS / ERROR */}
       {status && (
         <p style={{ background: "#eef", padding: 10, marginTop: 20 }}>
           {status}
