@@ -61,12 +61,11 @@ export async function genlayerRead(
     method: "gen_call",
     params: [
       {
-        type: "snapshot", // ✅ CORRECT TYPE
         from: "0x0000000000000000000000000000000000000000",
         to: contractAddress,
+        data: "0x",
         method,
         args,
-        data: "0x",
       },
     ],
   };
