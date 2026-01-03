@@ -58,7 +58,7 @@ export async function genlayerRead(
     id: Date.now(),
     method: "gen_call",
     params: {
-      contract: contractAddress, // ✅ correct key
+      address: contractAddress, // ✅ THIS is the correct key
       method,
       args,
     },
@@ -78,6 +78,7 @@ export async function genlayerRead(
 
   return json.result;
 }
+
 
 /* -------------------------------------------------------
    WRITE: Standard EVM transaction (MetaMask + ethers)
