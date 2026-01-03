@@ -62,10 +62,11 @@ export async function genlayerRead(
     params: [
       {
         type: "call",
-        to: contractAddress, // ✅ THIS is the correct key
+        from: "0x0000000000000000000000000000000000000000", // ✅ REQUIRED
+        to: contractAddress,                              // ✅ REQUIRED
         method,
         args,
-        data: null,          // ✅ required
+        data: "0x",                                       // ✅ REQUIRED
       },
     ],
   };
@@ -96,6 +97,7 @@ export async function genlayerRead(
 
   return json.result;
 }
+
 
 
 /* ======================================================
