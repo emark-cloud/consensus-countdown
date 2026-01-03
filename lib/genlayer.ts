@@ -15,8 +15,8 @@ export const GENLAYER_CHAIN = {
 };
 
 /* -------------------------------------------------------
-   CONTRACT ABI (WRITE ONLY)
-   ⚠️ Used ONLY for write transactions
+   CONTRACT ABI (WRITE METHODS ONLY)
+   ⚠️ DO NOT include view methods here
 ------------------------------------------------------- */
 export const CONTRACT_ABI = [
   "function create_room(string room_id, string prompt)",
@@ -25,7 +25,7 @@ export const CONTRACT_ABI = [
 ];
 
 /* -------------------------------------------------------
-   ENSURE GENLAYER CHAIN
+   ENSURE GENLAYER CHAIN (MetaMask)
 ------------------------------------------------------- */
 export async function ensureGenLayerChain(): Promise<void> {
   if (!window.ethereum) {
@@ -45,8 +45,8 @@ export async function ensureGenLayerChain(): Promise<void> {
 }
 
 /* -------------------------------------------------------
-   READ (GenLayer RPC)
-   ⚠️ DO NOT use ethers here
+   READ: GenLayer RPC (gen_call)
+   ⚠️ GenLayer expects `contract`, NOT `to`
 ------------------------------------------------------- */
 export async function genlayerRead(
   contractAddress: string,
@@ -55,10 +55,10 @@ export async function genlayerRead(
 ): Promise<any> {
   const payload = {
     jsonrpc: "2.0",
-    id: 1,
+    id: Date.now(),
     method: "gen_call",
     params: {
-      to: contractAddress,
+      contract: contractAddress, // ✅ correct key
       method,
       args,
     },
@@ -80,7 +80,7 @@ export async function genlayerRead(
 }
 
 /* -------------------------------------------------------
-   WRITE (Standard EVM Transaction)
+   WRITE: Standard EVM transaction (MetaMask + ethers)
 ------------------------------------------------------- */
 async function getSigner() {
   if (!window.ethereum) {
