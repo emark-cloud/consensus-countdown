@@ -1,53 +1,3 @@
-import { ethers } from "ethers";
-
-/* -------------------------------------------------------
-   GENLAYER STUDIO NET CONFIG
-------------------------------------------------------- */
-export const GENLAYER_CHAIN = {
-  chainId: "0xF22F", // 61999
-  chainName: "GenLayer StudioNet",
-  nativeCurrency: {
-    name: "Ether",
-    symbol: "ETH",
-    decimals: 18,
-  },
-  rpcUrls: ["https://studio.genlayer.com/api"],
-};
-
-/* -------------------------------------------------------
-   CONTRACT ABI (WRITE METHODS ONLY)
-------------------------------------------------------- */
-export const CONTRACT_ABI = [
-  "function create_room(string room_id, string prompt)",
-  "function submit_vote(string room_id, string vote)",
-  "function resolve_room(string room_id)",
-];
-
-/* -------------------------------------------------------
-   ENSURE GENLAYER CHAIN (MetaMask)
-------------------------------------------------------- */
-export async function ensureGenLayerChain(): Promise<void> {
-  if (!window.ethereum) {
-    throw new Error("MetaMask not detected");
-  }
-
-  const currentChain = await window.ethereum.request({
-    method: "eth_chainId",
-  });
-
-  if (currentChain !== GENLAYER_CHAIN.chainId) {
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [GENLAYER_CHAIN],
-    });
-  }
-}
-
-/* -------------------------------------------------------
-   READ: GenLayer RPC (gen_call)
-   -> NOTE: Studio expects positional params:
-     params: [ contractAddress, { method: "name", args: [...] } ]
-------------------------------------------------------- */
 export async function genlayerRead(
   contractAddress: string,
   method: string,
@@ -59,6 +9,7 @@ export async function genlayerRead(
     method: "gen_call",
     params: [
       {
+        type: "call",                // ✅ REQUIRED
         contract_address: contractAddress,
         method,
         args,
@@ -82,32 +33,4 @@ export async function genlayerRead(
   }
 
   return json.result;
-}
-
-/* -------------------------------------------------------
-   WRITE: Standard EVM transaction (MetaMask + ethers)
-------------------------------------------------------- */
-async function getSigner() {
-  if (!window.ethereum) {
-    throw new Error("MetaMask not available");
-  }
-
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  return provider.getSigner();
-}
-
-export async function genlayerWrite(
-  contractAddress: string,
-  method: string,
-  args: any[] = []
-): Promise<string> {
-  await ensureGenLayerChain();
-
-  const signer = await getSigner();
-  const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
-
-  const tx = await contract[method](...args);
-  await tx.wait();
-
-  return tx.hash;
 }
