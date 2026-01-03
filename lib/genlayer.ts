@@ -118,11 +118,12 @@ export async function genlayerWrite(
   method: string,
   args: any[] = []
 ): Promise<string> {
-  await ensureGenLayerChain();
-
   if (!window.ethereum) {
     throw new Error("MetaMask not available");
   }
+
+  // Ensure StudioNet
+  await ensureGenLayerChain();
 
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
@@ -133,10 +134,10 @@ export async function genlayerWrite(
     signer
   );
 
-  // 🚫 Prevent ethers from injecting invalid gas
-  const tx = await contract[method](...args, {
-    gasLimit: undefined,
-  });
+  // 🔴 IMPORTANT:
+  // Do NOT pass gas, gasLimit, or overrides
+  // GenLayer rejects 0xffffffff
+  const tx = await contract[method](...args);
 
   await tx.wait();
   return tx.hash;
