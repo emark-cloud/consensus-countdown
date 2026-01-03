@@ -61,10 +61,11 @@ export async function genlayerRead(
     method: "gen_call",
     params: [
       {
-        type: "call", // REQUIRED by GenLayer
+        type: "call",
         contract_address: contractAddress,
         method,
         args,
+        data: null, // ✅ REQUIRED, even for reads
       },
     ],
   };
@@ -82,7 +83,7 @@ export async function genlayerRead(
     json = JSON.parse(text);
   } catch {
     throw new Error(
-      `GenLayer read failed: invalid JSON response\nHTTP ${res.status}\n${text}`
+      `GenLayer read failed: invalid JSON\nHTTP ${res.status}\n${text}`
     );
   }
 
@@ -95,6 +96,7 @@ export async function genlayerRead(
 
   return json.result;
 }
+
 
 /* ======================================================
    WRITE — STANDARD EVM TRANSACTIONS (MetaMask + ethers)
