@@ -57,11 +57,11 @@ export async function genlayerRead(
     jsonrpc: "2.0",
     id: Date.now(),
     method: "gen_call",
-    params: {
-      address: contractAddress, // ✅ THIS is the correct key
-      method,
-      args,
-    },
+    params: [
+      contractAddress, // contract address (positional)
+      method,          // method name
+      args             // arguments array
+    ],
   };
 
   const res = await fetch("https://studio.genlayer.com/api", {
@@ -78,6 +78,7 @@ export async function genlayerRead(
 
   return json.result;
 }
+
 
 
 /* -------------------------------------------------------
