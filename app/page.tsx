@@ -5,7 +5,7 @@ import {
   genlayerRead,
   genlayerWrite,
   ensureGenLayerChain,
-} from "@/lib/genlayer";
+} from "../lib/genlayer";
 
 /* -------------------------------------------------------
    CONFIG
