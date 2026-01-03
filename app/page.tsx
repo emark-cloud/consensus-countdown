@@ -13,19 +13,33 @@ import {
 const CONTRACT_ADDRESS = "0xBf8D00b0F61B1FE4Ad532fFf982633d8b67E0429";
 
 /* -------------------------------------------------------
+   ERROR FORMATTER
+------------------------------------------------------- */
+function formatError(err: any): string {
+  if (!err) return "Unknown error";
+
+  if (typeof err === "string") return err;
+  if (err.reason) return err.reason;
+  if (err.message) return err.message;
+  if (err.error?.message) return err.error.message;
+
+  return JSON.stringify(err, null, 2);
+}
+
+/* -------------------------------------------------------
    PAGE
 ------------------------------------------------------- */
 export default function Page() {
-  // inputs
+  /* ------------------ inputs ------------------ */
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
 
-  // on-chain state
+  /* ---------------- on-chain ------------------ */
   const [room, setRoom] = useState<any>(null);
   const [votes, setVotes] = useState<Record<string, string>>({});
   const [leaderboard, setLeaderboard] = useState<Record<string, number>>({});
 
-  // ui state
+  /* ------------------ ui ---------------------- */
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,15 +60,15 @@ export default function Page() {
   }
 
   /* -------------------------------------------------------
-     ACTIONS (STANDARD WALLET TXs)
+     ACTIONS
   ------------------------------------------------------- */
   async function connectWallet() {
     setError(null);
     try {
       await ensureGenLayerChain();
-      setStatus("Wallet connected to GenLayer StudioNet");
-    } catch (e: any) {
-      setError(e.message || "Failed to connect wallet");
+      setStatus("Connected to GenLayer StudioNet");
+    } catch (e) {
+      setError(formatError(e));
     }
   }
 
@@ -62,26 +76,26 @@ export default function Page() {
     setError(null);
 
     if (!roomId.trim()) {
-      setError("Room ID is required");
+      setError("Room ID is required.");
       return;
     }
-
     if (!prompt.trim()) {
-      setError("Prompt is required");
+      setError("Prompt is required.");
       return;
     }
 
     try {
-      setStatus("Creating room (sign transaction)…");
+      setStatus("Creating room… Please sign the transaction.");
       await genlayerWrite(CONTRACT_ADDRESS, "create_room", [
         roomId,
         prompt,
       ]);
 
-      setStatus("Room created. Fetching state…");
+      setStatus("Room created. Loading state…");
       await loadRoom(roomId);
-    } catch (e: any) {
-      setError(e.message || "Create room failed");
+      setStatus(null);
+    } catch (e) {
+      setError(formatError(e));
       setStatus(null);
     }
   }
@@ -90,12 +104,12 @@ export default function Page() {
     setError(null);
 
     if (!room) {
-      setError("No active room");
+      setError("No active room loaded.");
       return;
     }
 
     try {
-      setStatus(`Submitting vote (${vote})…`);
+      setStatus(`Submitting "${vote}" vote… Please sign the transaction.`);
       await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [
         roomId,
         vote,
@@ -104,8 +118,8 @@ export default function Page() {
       await loadRoom(roomId);
       await loadLeaderboard();
       setStatus(null);
-    } catch (e: any) {
-      setError(e.message || "Vote failed");
+    } catch (e) {
+      setError(formatError(e));
       setStatus(null);
     }
   }
@@ -114,19 +128,19 @@ export default function Page() {
     setError(null);
 
     if (!room) {
-      setError("No active room");
+      setError("No active room loaded.");
       return;
     }
 
     try {
-      setStatus("Resolving room (AI + validators)…");
+      setStatus("Resolving room via AI consensus… Please sign the transaction.");
       await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [roomId]);
 
       await loadRoom(roomId);
       await loadLeaderboard();
       setStatus(null);
-    } catch (e: any) {
-      setError(e.message || "Resolve failed");
+    } catch (e) {
+      setError(formatError(e));
       setStatus(null);
     }
   }
@@ -145,7 +159,7 @@ export default function Page() {
     <main style={{ maxWidth: 720, margin: "40px auto", padding: 20 }}>
       <h1>Consensus Countdown</h1>
       <p style={{ color: "#555" }}>
-        Players propose a statement. Validators decide consensus.
+        Players propose subjective statements. Validators decide consensus.
       </p>
 
       {/* CONNECT */}
@@ -180,17 +194,17 @@ export default function Page() {
         </button>
       </section>
 
-      {/* ROOM */}
+      {/* ROOM STATE */}
       <section style={{ marginTop: 30 }}>
         <h3>Room State</h3>
         {room ? (
           <div style={{ background: "#f5f5f5", padding: 12 }}>
             <p><strong>{room.prompt}</strong></p>
             <p>Resolved: {room.resolved ? "Yes" : "No"}</p>
-            <p>Outcome: {room.final_outcome || "—"}</p>
+            <p>Final outcome: {room.final_outcome || "—"}</p>
           </div>
         ) : (
-          <p>No room loaded</p>
+          <p>No room loaded.</p>
         )}
       </section>
 
@@ -214,16 +228,35 @@ export default function Page() {
         </pre>
       </section>
 
-      {/* STATUS / ERROR */}
+      {/* STATUS */}
       {status && (
-        <p style={{ background: "#eef", padding: 10, marginTop: 20 }}>
+        <section
+          style={{
+            marginTop: 20,
+            padding: 10,
+            background: "#eef",
+          }}
+        >
           {status}
-        </p>
+        </section>
       )}
+
+      {/* ERROR */}
       {error && (
-        <p style={{ background: "#fee", padding: 10, marginTop: 20 }}>
-          {error}
-        </p>
+        <section
+          style={{
+            marginTop: 20,
+            padding: 12,
+            border: "1px solid #e00",
+            background: "#fff5f5",
+            color: "#900",
+          }}
+        >
+          <strong>Error</strong>
+          <pre style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>
+            {error}
+          </pre>
+        </section>
       )}
     </main>
   );
