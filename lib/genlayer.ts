@@ -58,10 +58,10 @@ export async function genlayerRead(
     id: Date.now(),
     method: "gen_call",
     params: [
-      contractAddress,
       {
+        contract_address: contractAddress,
         method,
-        args: args || [],
+        args,
       },
     ],
   };
@@ -72,26 +72,13 @@ export async function genlayerRead(
     body: JSON.stringify(payload),
   });
 
-  const text = await res.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch (parseErr) {
-    // include raw text when parse fails
-    throw new Error(
-      `GenLayer read failed: non-JSON response. HTTP ${res.status}. body: ${text}`
-    );
-  }
-
-  if (!json) {
-    throw new Error(`GenLayer read failed: empty response. HTTP ${res.status}`);
-  }
+  const json = await res.json();
 
   if (json.error) {
-    // bubble full error info
-    const errMsg = json.error.message || "GenLayer read returned error";
-    const extra = JSON.stringify(json.error, null, 2);
-    throw new Error(`${errMsg}\nRPC error: ${extra}`);
+    throw new Error(
+      `GenLayer read failed: ${json.error.message}\n` +
+      JSON.stringify(json.error, null, 2)
+    );
   }
 
   return json.result;
