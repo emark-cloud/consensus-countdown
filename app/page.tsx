@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { genlayerWrite, genlayerRead, ensureGenLayerChain } from "@/lib/genlayer";
+import { genlayerWrite, genlayerRead, ensureGenLayerChain, waitForTransactionReceipt } from "@/lib/genlayer";
 import { mapToUserFriendlyError, UserFriendlyError } from "@/lib/errors";
 import { LeaderboardMap } from "@/types/room";
 import { useRoom } from "@/hooks/useRoom";
@@ -71,13 +71,40 @@ export default function Page() {
 
     try {
       setStatus("Creating room... Please sign the transaction.");
-      await genlayerWrite(CONTRACT_ADDRESS, "create_room", [roomId, prompt]);
+      const txHash = await genlayerWrite(CONTRACT_ADDRESS, "create_room", [roomId, prompt]);
+      console.log("Transaction hash:", txHash);
 
-      setStatus("Room created! Loading state...");
-      await loadRoom();
-      await loadLeaderboard();
-      setStatus(null);
+      setStatus("Transaction submitted. Waiting for consensus...");
+      // Wait for transaction to be finalized by GenLayer
+      const receipt = await waitForTransactionReceipt(txHash, {
+        interval: 2000,     // Check every 2 seconds
+        maxRetries: 30,     // Max 60 seconds
+        targetStatus: "FINALIZED"
+      });
+      console.log("Transaction finalized:", receipt);
+
+      // Verify the room was created
+      setStatus("Loading room data...");
+      const roomData = await genlayerRead(CONTRACT_ADDRESS, "get_room", [roomId]);
+      console.log("Room data received:", roomData);
+
+      if (roomData && Object.keys(roomData).length > 0) {
+        // Only set currentRoomId after verifying room exists
+        setCurrentRoomId(roomId);
+
+        setStatus("Room created successfully! You can now vote.");
+        setTimeout(() => setStatus(null), 2000);
+
+        await loadLeaderboard();
+      } else {
+        setError({
+          title: "Room Not Found",
+          message: "The transaction was finalized but the room data is not available yet.",
+          action: "Try refreshing the page or creating the room again.",
+        });
+      }
     } catch (e) {
+      console.error("Error creating room:", e);
       handleError("createRoom", e);
       setStatus(null);
     }
@@ -96,9 +123,12 @@ export default function Page() {
 
     try {
       setStatus(`Submitting "${vote.toUpperCase()}" vote... Please sign the transaction.`);
-      await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [currentRoomId, vote]);
+      const txHash = await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [currentRoomId, vote]);
 
-      setStatus("Vote submitted! Refreshing...");
+      setStatus("Vote submitted! Waiting for consensus...");
+      await waitForTransactionReceipt(txHash);
+
+      setStatus("Vote confirmed! Refreshing...");
       await loadRoom();
       await loadLeaderboard();
       setStatus(null);
@@ -121,7 +151,10 @@ export default function Page() {
 
     try {
       setStatus("Resolving room via AI consensus... Please sign the transaction.");
-      await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [currentRoomId]);
+      const txHash = await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [currentRoomId]);
+
+      setStatus("Resolution submitted! Waiting for AI consensus...");
+      await waitForTransactionReceipt(txHash);
 
       setStatus("Room resolved! Refreshing...");
       await loadRoom();
@@ -167,10 +200,7 @@ export default function Page() {
         <ErrorDisplay error={error} onDismiss={() => setError(null)} />
       )}
 
-      <CreateRoom
-        onCreateRoom={createRoom}
-        onRoomIdChange={setCurrentRoomId}
-      />
+      <CreateRoom onCreateRoom={createRoom} />
 
       {room && (
         <>

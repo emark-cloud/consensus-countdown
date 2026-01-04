@@ -2,16 +2,15 @@ import { useState } from 'react';
 
 interface CreateRoomProps {
   onCreateRoom: (roomId: string, prompt: string) => void;
-  onRoomIdChange: (roomId: string) => void;
 }
 
-export function CreateRoom({ onCreateRoom, onRoomIdChange }: CreateRoomProps) {
+export function CreateRoom({ onCreateRoom }: CreateRoomProps) {
   const [roomId, setRoomId] = useState("");
   const [prompt, setPrompt] = useState("");
 
   const handleCreate = () => {
     onCreateRoom(roomId, prompt);
-    onRoomIdChange(roomId);
+    // Room ID will be set by parent after successful creation
   };
 
   return (

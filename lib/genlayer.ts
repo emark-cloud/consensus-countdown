@@ -88,6 +88,75 @@ export async function genlayerRead(
 }
 
 /* ======================================================
+   TRANSACTION RECEIPT POLLING
+   ✔ Uses GenLayer's gen_getTransactionReceipt
+   ✔ Polls until FINALIZED status
+====================================================== */
+export interface TransactionReceipt {
+  status: string;
+  txId: string;
+  blockNumber?: number;
+  [key: string]: any;
+}
+
+export async function waitForTransactionReceipt(
+  txHash: string,
+  options: {
+    interval?: number;
+    maxRetries?: number;
+    targetStatus?: string;
+  } = {}
+): Promise<TransactionReceipt> {
+  const interval = options.interval ?? 2000; // Poll every 2 seconds
+  const maxRetries = options.maxRetries ?? 30; // Max 60 seconds
+  const targetStatus = options.targetStatus ?? "FINALIZED";
+
+  for (let i = 0; i < maxRetries; i++) {
+    const payload = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "gen_getTransactionReceipt",
+      params: [{ txId: txHash }],
+    };
+
+    const res = await fetch("https://studio.genlayer.com/api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json();
+
+    if (json.error) {
+      throw new Error(
+        `Transaction receipt failed: ${json.error.message}\n${JSON.stringify(json.error, null, 2)}`
+      );
+    }
+
+    const receipt = json.result;
+
+    // If we have a receipt with the target status, return it
+    if (receipt && receipt.status === targetStatus) {
+      return receipt;
+    }
+
+    // If transaction failed or was canceled, throw error
+    if (receipt && (receipt.status === "CANCELED" || receipt.status === "UNDETERMINED")) {
+      throw new Error(
+        `Transaction ${receipt.status.toLowerCase()}: ${txHash}`
+      );
+    }
+
+    // Wait before next poll
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+
+  throw new Error(
+    `Transaction receipt timeout after ${(maxRetries * interval) / 1000}s. Transaction may still be pending.`
+  );
+}
+
+/* ======================================================
    WRITE — METAMASK-NATIVE TRANSACTION
    ✔ NO ethers tx sending
    ✔ NO gas / gasLimit / fees
