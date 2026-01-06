@@ -18,6 +18,7 @@ const CONTRACT_ADDRESS = "0x1432B283D358A8684d283D5f633aDd293c2CD99f";
 
 export default function Page() {
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<UserFriendlyError | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardMap>({});
@@ -25,13 +26,24 @@ export default function Page() {
   const { room, votes, loadRoom } = useRoom(CONTRACT_ADDRESS, currentRoomId);
   const { isExpired } = useCountdown(room?.created_at || null);
 
-  // Check URL for room parameter on mount
+  // Check URL for room parameter and existing wallet on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get("room");
     if (roomParam) {
       setCurrentRoomId(roomParam);
     }
+
+    // Check for existing wallet connection
+    async function checkWallet() {
+      if (window.ethereum) {
+        const accounts = await window.ethereum.request({ method: "eth_accounts" });
+        if (accounts?.[0]) {
+          setWalletAddress(accounts[0]);
+        }
+      }
+    }
+    checkWallet();
   }, []);
 
   // Update URL when room changes
@@ -61,6 +73,12 @@ export default function Page() {
     setError(null);
     try {
       await ensureGenLayerChain();
+      const accounts = await window.ethereum?.request({
+        method: "eth_requestAccounts",
+      });
+      if (accounts?.[0]) {
+        setWalletAddress(accounts[0]);
+      }
       setStatus("Connected to GenLayer StudioNet");
       setTimeout(() => setStatus(null), 3000);
     } catch (e) {
@@ -241,7 +259,7 @@ export default function Page() {
         </p>
       </header>
 
-      <ConnectWallet onConnect={connectWallet} />
+      <ConnectWallet onConnect={connectWallet} address={walletAddress} />
 
       {status && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
