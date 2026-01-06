@@ -12,6 +12,7 @@ import { RoomState } from "@/components/RoomState";
 import { VotingPanel } from "@/components/VotingPanel";
 import { Leaderboard } from "@/components/Leaderboard";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
+import { ShareLink } from "@/components/ShareLink";
 
 const CONTRACT_ADDRESS = "0x1432B283D358A8684d283D5f633aDd293c2CD99f";
 
@@ -23,6 +24,24 @@ export default function Page() {
 
   const { room, votes, loadRoom } = useRoom(CONTRACT_ADDRESS, currentRoomId);
   const { isExpired } = useCountdown(room?.created_at || null);
+
+  // Check URL for room parameter on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get("room");
+    if (roomParam) {
+      setCurrentRoomId(roomParam);
+    }
+  }, []);
+
+  // Update URL when room changes
+  useEffect(() => {
+    if (currentRoomId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", currentRoomId);
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [currentRoomId]);
 
   // Load leaderboard on mount (silent errors to avoid startup noise)
   useEffect(() => {
@@ -235,6 +254,10 @@ export default function Page() {
       )}
 
       <CreateRoom onCreateRoom={createRoom} />
+
+      {currentRoomId && (
+        <ShareLink roomId={currentRoomId} />
+      )}
 
       {room && (
         <>
