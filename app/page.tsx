@@ -13,7 +13,7 @@ import { VotingPanel } from "@/components/VotingPanel";
 import { Leaderboard } from "@/components/Leaderboard";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
 
-const CONTRACT_ADDRESS = "0xBf8D00b0F61B1FE4Ad532fFf982633d8b67E0429";
+const CONTRACT_ADDRESS = "0x1432B283D358A8684d283D5f633aDd293c2CD99f";
 
 export default function Page() {
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
@@ -75,32 +75,60 @@ export default function Page() {
       console.log("Transaction hash:", txHash);
 
       setStatus("Transaction submitted. Waiting for consensus...");
-      // Wait for transaction to be finalized by GenLayer
-      const receipt = await waitForTransactionReceipt(txHash, {
-        interval: 2000,     // Check every 2 seconds
-        maxRetries: 30,     // Max 60 seconds
-        targetStatus: "FINALIZED"
-      });
-      console.log("Transaction finalized:", receipt);
 
-      // Verify the room was created
-      setStatus("Loading room data...");
-      const roomData = await genlayerRead(CONTRACT_ADDRESS, "get_room", [roomId]);
-      console.log("Room data received:", roomData);
+      try {
+        // Try to wait for transaction receipt
+        await waitForTransactionReceipt(txHash, {
+          interval: 2000,
+          maxRetries: 30,
+        });
+      } catch (receiptError) {
+        console.warn("Receipt polling failed, will verify via contract state:", receiptError);
+      }
 
-      if (roomData && Object.keys(roomData).length > 0) {
-        // Only set currentRoomId after verifying room exists
+      // Verify the room was created by polling contract state
+      // GenLayer AI consensus can take 1-2 minutes
+      let roomData = null;
+      const verifyMaxRetries = 20;
+      const verifyInterval = 5000; // 5s between retries to avoid rate limiting
+
+      for (let i = 0; i < verifyMaxRetries; i++) {
+        setStatus(`Waiting for AI consensus... (${i + 1}/${verifyMaxRetries})`);
+
+        try {
+          roomData = await genlayerRead(CONTRACT_ADDRESS, "get_room", [roomId]);
+          console.log(`Verify attempt ${i + 1}:`, roomData);
+
+          // genlayerRead returns a Map, check size for Maps or keys for objects
+          const hasData = roomData instanceof Map
+            ? roomData.size > 0
+            : roomData && Object.keys(roomData).length > 0;
+
+          if (hasData) {
+            break; // Room found!
+          }
+        } catch (readError) {
+          console.warn(`Read attempt ${i + 1} failed:`, readError);
+        }
+
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, verifyInterval));
+      }
+
+      const roomCreated = roomData instanceof Map
+        ? roomData.size > 0
+        : roomData && Object.keys(roomData).length > 0;
+
+      if (roomCreated) {
         setCurrentRoomId(roomId);
-
         setStatus("Room created successfully! You can now vote.");
         setTimeout(() => setStatus(null), 2000);
-
         await loadLeaderboard();
       } else {
         setError({
-          title: "Room Not Found",
-          message: "The transaction was finalized but the room data is not available yet.",
-          action: "Try refreshing the page or creating the room again.",
+          title: "Room Creation Timeout",
+          message: "The transaction was sent but the room couldn't be verified.",
+          action: "Wait a moment and try loading the room manually, or try creating again.",
         });
       }
     } catch (e) {
@@ -125,10 +153,12 @@ export default function Page() {
       setStatus(`Submitting "${vote.toUpperCase()}" vote... Please sign the transaction.`);
       const txHash = await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [currentRoomId, vote]);
 
-      setStatus("Vote submitted! Waiting for consensus...");
-      await waitForTransactionReceipt(txHash);
+      setStatus("Vote submitted! Waiting for confirmation...");
 
-      setStatus("Vote confirmed! Refreshing...");
+      // Wait a bit for the transaction to be processed
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      setStatus("Refreshing room state...");
       await loadRoom();
       await loadLeaderboard();
       setStatus(null);
@@ -154,9 +184,11 @@ export default function Page() {
       const txHash = await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [currentRoomId]);
 
       setStatus("Resolution submitted! Waiting for AI consensus...");
-      await waitForTransactionReceipt(txHash);
 
-      setStatus("Room resolved! Refreshing...");
+      // Resolution takes longer (AI + consensus), wait a bit more
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      setStatus("Refreshing room state...");
       await loadRoom();
       await loadLeaderboard();
       setStatus(null);
@@ -169,7 +201,9 @@ export default function Page() {
   async function loadLeaderboard() {
     try {
       const lb = await genlayerRead(CONTRACT_ADDRESS, "get_leaderboard", []);
-      setLeaderboard(lb || {});
+      // genlayerRead returns Maps, convert to plain object
+      const lbObj = lb instanceof Map ? Object.fromEntries(lb) : lb;
+      setLeaderboard(lbObj || {});
     } catch (e) {
       // Silently handle leaderboard errors - they're not critical
       console.warn("Leaderboard load failed:", e);

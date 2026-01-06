@@ -8,7 +8,10 @@ export function Leaderboard({
   leaderboard: LeaderboardMap;
   onRefresh: () => void;
 }) {
-  const entries = Object.entries(leaderboard).sort(([, a], [, b]) => b - a);
+  // Convert BigInt to number for sorting and display
+  const entries = Object.entries(leaderboard)
+    .map(([addr, xp]) => [addr, typeof xp === 'bigint' ? Number(xp) : xp] as [string, number])
+    .sort(([, a], [, b]) => b - a);
 
   return (
     <div className="card">

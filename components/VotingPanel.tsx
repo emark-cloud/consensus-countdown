@@ -41,8 +41,8 @@ export function VotingPanel({
         </button>
       </div>
 
-      {/* Vote Counts */}
-      {totalVotes > 0 && (
+      {/* Vote Counts - only shown after resolution */}
+      {isResolved && totalVotes > 0 && (
         <div className="flex justify-around text-sm text-gray-600 bg-gray-100 rounded-lg p-3">
           <div>
             <span className="font-semibold text-green-700">YES:</span> {yesCount}

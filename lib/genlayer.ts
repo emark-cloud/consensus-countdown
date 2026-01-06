@@ -1,7 +1,27 @@
-import { ethers } from "ethers";
+import { createClient, abi } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
+import { toRlp, toHex, encodeFunctionData, type Address } from "viem";
 
 /* ======================================================
-   GENLAYER STUDIO NET CONFIG
+   GENLAYER CLIENT (using official SDK)
+====================================================== */
+let client = createClient({
+  chain: studionet,
+});
+
+// Re-initialize client with MetaMask provider when available
+function getClientWithProvider() {
+  if (typeof window !== "undefined" && window.ethereum) {
+    client = createClient({
+      chain: studionet,
+      provider: window.ethereum,
+    });
+  }
+  return client;
+}
+
+/* ======================================================
+   GENLAYER STUDIO NET CONFIG (for MetaMask)
 ====================================================== */
 export const GENLAYER_CHAIN = {
   chainId: "0xF22F", // 61999
@@ -14,15 +34,6 @@ export const GENLAYER_CHAIN = {
   rpcUrls: ["https://studio.genlayer.com/api"],
 };
 
-/* ======================================================
-   CONTRACT ABI (WRITE METHODS ONLY)
-   ⚠️ View methods are NOT called via ethers
-====================================================== */
-export const CONTRACT_ABI = [
-  "function create_room(string room_id, string prompt)",
-  "function submit_vote(string room_id, string vote)",
-  "function resolve_room(string room_id)",
-];
 
 /* ======================================================
    ENSURE WALLET IS ON GENLAYER STUDIONET
@@ -45,52 +56,32 @@ export async function ensureGenLayerChain(): Promise<void> {
 }
 
 /* ======================================================
-   READ — GENLAYER SNAPSHOT EXECUTION (gen_call)
-   ✔ Uses snapshot mode
-   ✔ Uses contract_address (NOT to/from)
-   ✔ NO EVM-style fields
+   READ — USING GENLAYER SDK's readContract
+   ✔ Uses official SDK for proper encoding/decoding
+   ✔ Handles GenLayer's custom calldata format
 ====================================================== */
 export async function genlayerRead(
   contractAddress: string,
   method: string,
   args: any[] = []
 ): Promise<any> {
-  const payload = {
-    jsonrpc: "2.0",
-    id: Date.now(),
-    method: "gen_call",
-    params: [
-      {
-        type: "snapshot",
-        contract_address: contractAddress,
-        method,
-        args,
-      },
-    ],
-  };
-
-  const res = await fetch("https://studio.genlayer.com/api", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const json = await res.json();
-
-  if (json.error) {
+  try {
+    const result = await client.readContract({
+      address: contractAddress as `0x${string}`,
+      functionName: method,
+      args: args,
+    });
+    return result;
+  } catch (error: any) {
     throw new Error(
-      `GenLayer read failed: ${json.error.message}\n` +
-      JSON.stringify(json.error, null, 2)
+      `GenLayer read failed: ${error.message || error}`
     );
   }
-
-  return json.result;
 }
 
 /* ======================================================
    TRANSACTION RECEIPT POLLING
-   ✔ Uses GenLayer's gen_getTransactionReceipt
-   ✔ Polls until FINALIZED status
+   ✔ Uses GenLayer SDK's waitForTransactionReceipt
 ====================================================== */
 export interface TransactionReceipt {
   status: string;
@@ -107,60 +98,36 @@ export async function waitForTransactionReceipt(
     targetStatus?: string;
   } = {}
 ): Promise<TransactionReceipt> {
-  const interval = options.interval ?? 2000; // Poll every 2 seconds
-  const maxRetries = options.maxRetries ?? 30; // Max 60 seconds
-  const targetStatus = options.targetStatus ?? "FINALIZED";
-
-  for (let i = 0; i < maxRetries; i++) {
-    const payload = {
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "gen_getTransactionReceipt",
-      params: [{ txId: txHash }],
-    };
-
-    const res = await fetch("https://studio.genlayer.com/api", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+  try {
+    const receipt = await client.waitForTransactionReceipt({
+      hash: txHash as `0x${string}` & { length: 66 },
+      interval: options.interval ?? 2000,
+      retries: options.maxRetries ?? 30,
     });
 
-    const json = await res.json();
+    // receipt.consensus_data?.final is the final consensus result
+    const finalData = receipt.consensus_data?.final;
+    const status = typeof finalData === 'object' && finalData !== null
+      ? (finalData as any).status ?? "FINALIZED"
+      : "FINALIZED";
 
-    if (json.error) {
-      throw new Error(
-        `Transaction receipt failed: ${json.error.message}\n${JSON.stringify(json.error, null, 2)}`
-      );
-    }
-
-    const receipt = json.result;
-
-    // If we have a receipt with the target status, return it
-    if (receipt && receipt.status === targetStatus) {
-      return receipt;
-    }
-
-    // If transaction failed or was canceled, throw error
-    if (receipt && (receipt.status === "CANCELED" || receipt.status === "UNDETERMINED")) {
-      throw new Error(
-        `Transaction ${receipt.status.toLowerCase()}: ${txHash}`
-      );
-    }
-
-    // Wait before next poll
-    await new Promise((resolve) => setTimeout(resolve, interval));
+    return {
+      status,
+      txId: txHash,
+      ...receipt,
+    };
+  } catch (error: any) {
+    throw new Error(
+      `Transaction receipt timeout. Transaction may still be pending.`
+    );
   }
-
-  throw new Error(
-    `Transaction receipt timeout after ${(maxRetries * interval) / 1000}s. Transaction may still be pending.`
-  );
 }
 
 /* ======================================================
-   WRITE — METAMASK-NATIVE TRANSACTION
-   ✔ NO ethers tx sending
-   ✔ NO gas / gasLimit / fees
-   ✔ Matches Guess-Picture & Draw-Match
+   WRITE — METAMASK + GENLAYER CONSENSUS CONTRACT
+   ✔ Uses GenLayerJS SDK for calldata encoding
+   ✔ Routes through consensus contract (addTransaction)
+   ✔ MetaMask for transaction signing
 ====================================================== */
 export async function genlayerWrite(
   contractAddress: string,
@@ -173,24 +140,59 @@ export async function genlayerWrite(
 
   await ensureGenLayerChain();
 
-  // Use ethers ONLY to encode calldata
-  const iface = new ethers.Interface(CONTRACT_ABI);
-  const data = iface.encodeFunctionData(method, args);
-
+  // Get account from MetaMask
   const accounts = await window.ethereum.request({
     method: "eth_requestAccounts",
   });
-
   const from = accounts[0];
 
+  // Debug: log the args being encoded
+  console.log("[genlayerWrite] method:", method);
+  console.log("[genlayerWrite] args:", JSON.stringify(args));
+
+  // Encode the contract method call using GenLayer SDK
+  const calldataObj = abi.calldata.makeCalldataObject(method, args, undefined);
+  console.log("[genlayerWrite] calldataObj:", calldataObj);
+  const encodedBytes = abi.calldata.encode(calldataObj);
+  console.log("[genlayerWrite] encoded hex:", Array.from(encodedBytes, (b) => b.toString(16).padStart(2, "0")).join(""));
+
+  // GenLayer expects RLP-encoded array: [encodedCalldata, leaderOnly]
+  const leaderOnly = false;
+  const serializedData = toRlp([toHex(encodedBytes), toHex(leaderOnly)]);
+
+  // Encode the call to the consensus main contract's addTransaction function
+  // This routes the transaction through GenLayer's consensus mechanism
+  const consensusContractAddress = studionet.consensusMainContract?.address;
+  const consensusAbi = studionet.consensusMainContract?.abi;
+
+  if (!consensusContractAddress || !consensusAbi) {
+    throw new Error("Consensus contract not configured for studionet");
+  }
+
+  const data = encodeFunctionData({
+    abi: consensusAbi,
+    functionName: "addTransaction",
+    args: [
+      from as Address,                                    // sender
+      contractAddress as Address,                         // recipient (target contract)
+      studionet.defaultNumberOfInitialValidators,         // numOfInitialValidators
+      studionet.defaultConsensusMaxRotations,             // maxRotations
+      serializedData,                                     // calldata
+    ],
+  });
+
+  console.log("[genlayerWrite] consensus contract:", consensusContractAddress);
+  console.log("[genlayerWrite] target contract:", contractAddress);
+
+  // Send transaction to consensus contract via MetaMask
   const txHash = await window.ethereum.request({
     method: "eth_sendTransaction",
     params: [
       {
         from,
-        to: contractAddress,
+        to: consensusContractAddress,
         data,
-        // 🚫 DO NOT add gas, gasLimit, or fee fields
+        gas: "0x30D40", // 200000
       },
     ],
   });

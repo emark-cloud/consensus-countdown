@@ -1,6 +1,6 @@
 import { useCountdown } from '@/hooks/useCountdown';
 
-export function CountdownTimer({ createdAt }: { createdAt: number | null }) {
+export function CountdownTimer({ createdAt }: { createdAt: number | bigint | null }) {
   const { timeRemaining, isExpired, formattedTime } = useCountdown(createdAt);
 
   if (!createdAt) return null;

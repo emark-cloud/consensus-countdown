@@ -25,8 +25,13 @@ export function useRoom(contractAddress: string, roomId: string | null) {
         genlayerRead(contractAddress, "get_votes", [roomId]),
       ]);
 
-      setRoom(roomData && Object.keys(roomData).length ? roomData : null);
-      setVotes(votesData || {});
+      // genlayerRead returns Maps, convert to plain objects
+      const roomObj = roomData instanceof Map ? Object.fromEntries(roomData) : roomData;
+      const votesObj = votesData instanceof Map ? Object.fromEntries(votesData) : votesData;
+
+      const hasRoom = roomObj && Object.keys(roomObj).length > 0;
+      setRoom(hasRoom ? roomObj : null);
+      setVotes(votesObj || {});
     } catch (e) {
       setError(e);
       console.error('loadRoom error:', e);

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { GAME_CONFIG } from '@/lib/config';
 import { formatTime } from '@/lib/utils';
 
-export function useCountdown(createdAt: number | null) {
+export function useCountdown(createdAt: number | bigint | null) {
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isExpired, setIsExpired] = useState(false);
 
@@ -13,8 +13,10 @@ export function useCountdown(createdAt: number | null) {
       return;
     }
 
+    // Convert BigInt to number if needed (from GenLayer SDK)
+    const createdAtNum = typeof createdAt === 'bigint' ? Number(createdAt) : createdAt;
     const duration = GAME_CONFIG.DEFAULT_COUNTDOWN_SECONDS;
-    const endsAt = createdAt + duration;
+    const endsAt = createdAtNum + duration;
 
     const updateTimer = () => {
       const now = Math.floor(Date.now() / 1000);
