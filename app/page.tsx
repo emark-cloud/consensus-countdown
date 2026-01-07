@@ -1,40 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { genlayerWrite, genlayerRead, ensureGenLayerChain, waitForTransactionReceipt } from "@/lib/genlayer";
 import { mapToUserFriendlyError, UserFriendlyError } from "@/lib/errors";
 import { LeaderboardMap } from "@/types/room";
-import { useRoom } from "@/hooks/useRoom";
-import { useCountdown } from "@/hooks/useCountdown";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { CreateRoom } from "@/components/CreateRoom";
-import { RoomState } from "@/components/RoomState";
-import { VotingPanel } from "@/components/VotingPanel";
 import { Leaderboard } from "@/components/Leaderboard";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
-import { ShareLink } from "@/components/ShareLink";
 
 const CONTRACT_ADDRESS = "0x1432B283D358A8684d283D5f633aDd293c2CD99f";
 
 export default function Page() {
-  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const router = useRouter();
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<UserFriendlyError | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardMap>({});
 
-  const { room, votes, loadRoom } = useRoom(CONTRACT_ADDRESS, currentRoomId);
-  const { isExpired } = useCountdown(room?.created_at || null);
-
-  // Check URL for room parameter and existing wallet on mount
+  // Check for existing wallet connection on mount
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get("room");
-    if (roomParam) {
-      setCurrentRoomId(roomParam);
-    }
-
-    // Check for existing wallet connection
     async function checkWallet() {
       if (window.ethereum) {
         const accounts = await window.ethereum.request({ method: "eth_accounts" });
@@ -45,15 +31,6 @@ export default function Page() {
     }
     checkWallet();
   }, []);
-
-  // Update URL when room changes
-  useEffect(() => {
-    if (currentRoomId) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("room", currentRoomId);
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, [currentRoomId]);
 
   // Load leaderboard on mount (silent errors to avoid startup noise)
   useEffect(() => {
@@ -157,10 +134,8 @@ export default function Page() {
         : roomData && Object.keys(roomData).length > 0;
 
       if (roomCreated) {
-        setCurrentRoomId(roomId);
-        setStatus("Room created successfully! You can now vote.");
-        setTimeout(() => setStatus(null), 2000);
-        await loadLeaderboard();
+        setStatus("Room created! Redirecting...");
+        router.push(`/${encodeURIComponent(roomId)}`);
       } else {
         setError({
           title: "Room Creation Timeout",
@@ -171,66 +146,6 @@ export default function Page() {
     } catch (e) {
       console.error("Error creating room:", e);
       handleError("createRoom", e);
-      setStatus(null);
-    }
-  }
-
-  async function submitVote(vote: "yes" | "no") {
-    setError(null);
-
-    if (!room) {
-      setError({
-        title: "No Room Loaded",
-        message: "Please load or create a room first.",
-      });
-      return;
-    }
-
-    try {
-      setStatus(`Submitting "${vote.toUpperCase()}" vote... Please sign the transaction.`);
-      const txHash = await genlayerWrite(CONTRACT_ADDRESS, "submit_vote", [currentRoomId, vote]);
-
-      setStatus("Vote submitted! Waiting for confirmation...");
-
-      // Wait a bit for the transaction to be processed
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      setStatus("Refreshing room state...");
-      await loadRoom();
-      await loadLeaderboard();
-      setStatus(null);
-    } catch (e) {
-      handleError("submitVote", e);
-      setStatus(null);
-    }
-  }
-
-  async function resolveRoom() {
-    setError(null);
-
-    if (!room) {
-      setError({
-        title: "No Room Loaded",
-        message: "Please load or create a room first.",
-      });
-      return;
-    }
-
-    try {
-      setStatus("Resolving room via AI consensus... Please sign the transaction.");
-      const txHash = await genlayerWrite(CONTRACT_ADDRESS, "resolve_room", [currentRoomId]);
-
-      setStatus("Resolution submitted! Waiting for AI consensus...");
-
-      // Resolution takes longer (AI + consensus), wait a bit more
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
-      setStatus("Refreshing room state...");
-      await loadRoom();
-      await loadLeaderboard();
-      setStatus(null);
-    } catch (e) {
-      handleError("resolveRoom", e);
       setStatus(null);
     }
   }
@@ -272,23 +187,6 @@ export default function Page() {
       )}
 
       <CreateRoom onCreateRoom={createRoom} />
-
-      {currentRoomId && (
-        <ShareLink roomId={currentRoomId} />
-      )}
-
-      {room && (
-        <>
-          <RoomState room={room} />
-          <VotingPanel
-            votes={votes}
-            isExpired={isExpired}
-            isResolved={room.resolved}
-            onVote={submitVote}
-            onResolve={resolveRoom}
-          />
-        </>
-      )}
 
       <Leaderboard
         leaderboard={leaderboard}

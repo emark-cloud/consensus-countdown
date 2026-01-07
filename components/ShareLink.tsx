@@ -6,7 +6,7 @@ export function ShareLink({ roomId }: { roomId: string }) {
   const [copied, setCopied] = useState(false);
 
   const shareUrl = typeof window !== "undefined"
-    ? `${window.location.origin}?room=${encodeURIComponent(roomId)}`
+    ? `${window.location.origin}/${encodeURIComponent(roomId)}`
     : "";
 
   async function copyToClipboard() {

@@ -4,6 +4,7 @@ interface VotingPanelProps {
   votes: VoteMap;
   isExpired: boolean;
   isResolved: boolean;
+  walletAddress: string | null;
   onVote: (vote: "yes" | "no") => void;
   onResolve: () => void;
 }
@@ -12,6 +13,7 @@ export function VotingPanel({
   votes,
   isExpired,
   isResolved,
+  walletAddress,
   onVote,
   onResolve
 }: VotingPanelProps) {
@@ -19,7 +21,15 @@ export function VotingPanel({
   const noCount = Object.values(votes).filter(v => v === "no").length;
   const totalVotes = yesCount + noCount;
 
-  const votingDisabled = isExpired || isResolved;
+  // Check if user has already voted (case-insensitive address comparison)
+  const userVote = walletAddress
+    ? Object.entries(votes).find(
+        ([addr]) => addr.toLowerCase() === walletAddress.toLowerCase()
+      )?.[1]
+    : undefined;
+  const hasVoted = userVote !== undefined;
+
+  const votingDisabled = isExpired || isResolved || hasVoted;
 
   return (
     <div className="space-y-4">
@@ -66,7 +76,13 @@ export function VotingPanel({
         </button>
       )}
 
-      {votingDisabled && !isResolved && (
+      {hasVoted && !isResolved && (
+        <p className="text-sm text-green-600 text-center">
+          You voted <span className="font-semibold uppercase">{userVote}</span>
+        </p>
+      )}
+
+      {votingDisabled && !isResolved && !hasVoted && (
         <p className="text-sm text-gray-500 text-center">
           Voting is closed. Waiting for resolution...
         </p>
